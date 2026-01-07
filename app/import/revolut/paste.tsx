@@ -10,6 +10,7 @@ import {
 import { useSessionStore } from "@/store/useSessionStore";
 import { Feather } from "@expo/vector-icons";
 import * as Clipboard from "expo-clipboard";
+import React from "react";
 import { router, useLocalSearchParams } from "expo-router";
 import { useEffect, useState } from "react";
 import {
@@ -46,13 +47,26 @@ export default function RevolutImportPasteScreen() {
   const [csvContent, setCSVContent] = useState("");
   const [loading, setLoading] = useState(false);
   const { user } = useSessionStore();
+  const autoProcessTriggered = React.useRef(false);
 
-  // If CSV content was passed as a parameter, set it automatically
+  // If CSV content was passed as a parameter, set it and auto-proceed to preview
   useEffect(() => {
-    if (params.csvContent) {
+    if (params.csvContent && !autoProcessTriggered.current) {
+      autoProcessTriggered.current = true;
       setCSVContent(params.csvContent);
     }
   }, [params.csvContent]);
+
+  // Auto-proceed to preview when CSV content is set via share (not manual paste)
+  useEffect(() => {
+    if (csvContent && autoProcessTriggered.current && !loading) {
+      // Small delay to ensure state is settled, then auto-process
+      const timer = setTimeout(() => {
+        handleContinue();
+      }, 100);
+      return () => clearTimeout(timer);
+    }
+  }, [csvContent]);
 
   const handlePaste = async () => {
     try {

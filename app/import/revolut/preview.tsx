@@ -35,19 +35,21 @@ interface Transaction {
 
 // Helpers for robust deduping (normalize text, amount, and date to a stable key)
 const normalizeText = (s: string) => (s || "").toLowerCase().replace(/\s+/g, " ").trim();
-const normalizeDateToISO = (value: string) => {
+// Normalize date to YYYY-MM-DD format for comparison (ignore time component)
+// This ensures transactions on the same day with same details are detected as duplicates
+const normalizeDateForKey = (value: string) => {
   if (!value) return "";
-  const t = new Date(value).getTime();
-  if (Number.isNaN(t)) return (value || "").trim();
-  // Preserve exact timestamp including milliseconds for precise duplicate detection
-  return new Date(t).toISOString();
+  const d = new Date(value);
+  if (Number.isNaN(d.getTime())) return (value || "").trim();
+  // Use UTC date to avoid timezone issues
+  return d.toISOString().split('T')[0]; // Returns YYYY-MM-DD
 };
 // Use absolute amount to be resilient to legacy records that stored negative expenses
-// Include exact timestamp to distinguish multiple transactions on the same day
+// Compare dates by day only (not exact timestamp) to catch duplicates reliably
 const makeKeyFromTransaction = (t: Transaction) =>
-  `${normalizeText(t.title)}|${Math.abs(t.amount)}|${t.kind}|${t.date}`;
+  `${normalizeText(t.title)}|${Math.abs(t.amount)}|${t.kind}|${normalizeDateForKey(t.date)}`;
 const makeKeyFromDoc = (doc: any) =>
-  `${normalizeText(doc.title || "")}|${Math.abs(Number(doc.amount))}|${doc.kind}|${doc.date || ""}`;
+  `${normalizeText(doc.title || "")}|${Math.abs(Number(doc.amount))}|${doc.kind}|${normalizeDateForKey(doc.date || "")}`;
 
 export default function ImportPreviewScreen() {
   const { user } = useSessionStore();
