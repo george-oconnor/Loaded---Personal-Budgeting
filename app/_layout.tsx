@@ -1,18 +1,54 @@
 import { useAutoSync } from "@/hooks/useAutoSync";
 import { detectCSVProvider } from "@/lib/csvDetector";
-import { captureException, captureMessage, initSentry } from "@/lib/sentry";
+import { addBreadcrumb, captureException, captureMessage, ErrorBoundary, initSentry } from "@/lib/sentry";
 import { useSessionStore } from "@/store/useSessionStore";
 import * as FileSystem from 'expo-file-system';
 import { useFonts } from "expo-font";
 import * as Linking from 'expo-linking';
 import { SplashScreen, Stack, useRouter, useSegments } from "expo-router";
 import { useEffect, useRef } from "react";
-import { Alert } from "react-native";
+import { Alert, Text, View } from "react-native";
 import { GestureHandlerRootView } from "react-native-gesture-handler";
 import './globals.css';
 
 // Initialize Sentry before app renders
 initSentry();
+
+// Global unhandled promise rejection handler
+if (typeof global !== 'undefined') {
+  const originalHandler = global.Promise;
+  if (originalHandler) {
+    const rejectionTracking = require('promise/setimmediate/rejection-tracking');
+    rejectionTracking.enable({
+      allRejections: true,
+      onUnhandled: (id: string, error: Error) => {
+        captureException(error, {
+          tags: { error_type: 'unhandled_promise_rejection' },
+          contexts: { promise_rejection: { id } }
+        });
+      },
+      onHandled: () => {},
+    });
+  }
+}
+
+// Fallback error UI component
+function ErrorFallback({ error, resetError }: { error: Error; resetError: () => void }) {
+  return (
+    <View style={{ flex: 1, justifyContent: 'center', alignItems: 'center', padding: 20, backgroundColor: '#fff' }}>
+      <Text style={{ fontSize: 18, fontWeight: 'bold', marginBottom: 10, color: '#1F2937' }}>Something went wrong</Text>
+      <Text style={{ fontSize: 14, color: '#6B7280', marginBottom: 20, textAlign: 'center' }}>
+        {error?.message || 'An unexpected error occurred'}
+      </Text>
+      <Text
+        onPress={resetError}
+        style={{ fontSize: 16, color: '#7C3AED', fontWeight: '600' }}
+      >
+        Try again
+      </Text>
+    </View>
+  );
+}
 
 export default function RootLayout() {
   const [fontsLoaded, error] = useFonts({
@@ -235,6 +271,7 @@ export default function RootLayout() {
     if (pendingPasswordReset.current) {
       const { userId, secret } = pendingPasswordReset.current;
       pendingPasswordReset.current = null;
+      addBreadcrumb({ message: 'Navigating to password reset', category: 'navigation', data: { userId } });
       router.push({
         pathname: '/auth/reset-password',
         params: { userId, secret }
@@ -247,11 +284,13 @@ export default function RootLayout() {
     if (status === "unauthenticated" && !inAuthGroup) {
       if (!navigationAttempted.current) {
         navigationAttempted.current = true;
+        addBreadcrumb({ message: 'Redirecting to auth (unauthenticated)', category: 'navigation' });
         router.replace("/auth");
       }
     } else if (status === "authenticated" && inAuthGroup) {
       if (!navigationAttempted.current) {
         navigationAttempted.current = true;
+        addBreadcrumb({ message: 'Redirecting to home (authenticated)', category: 'navigation' });
         router.replace("/");
       }
     } else {
@@ -260,9 +299,23 @@ export default function RootLayout() {
     }
   }, [status, segments]);
 
+  // Track route changes for navigation breadcrumbs
+  useEffect(() => {
+    const path = segments.join('/');
+    if (path) {
+      addBreadcrumb({
+        message: `Navigated to /${path}`,
+        category: 'navigation',
+        data: { path, segments }
+      });
+    }
+  }, [segments]);
+
   return (
-    <GestureHandlerRootView style={{ flex: 1 }}>
-      <Stack screenOptions={{ headerShown: false }} />
-    </GestureHandlerRootView>
+    <ErrorBoundary fallback={ErrorFallback}>
+      <GestureHandlerRootView style={{ flex: 1 }}>
+        <Stack screenOptions={{ headerShown: false }} />
+      </GestureHandlerRootView>
+    </ErrorBoundary>
   );
 }

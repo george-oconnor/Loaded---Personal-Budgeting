@@ -1,5 +1,5 @@
 import { createAccount, createUserProfile, getCurrentSession, getCurrentUser, signIn, signOut } from "@/lib/appwrite";
-import { captureException, clearUser as clearSentryUser, setUser as setSentryUser } from "@/lib/sentry";
+import { addBreadcrumb, captureException, clearUser as clearSentryUser, setUser as setSentryUser } from "@/lib/sentry";
 import type { SessionState } from "@/types/type";
 import { create } from "zustand";
 
@@ -36,15 +36,20 @@ export const useSessionStore = create<SessionState>((set) => ({
   login: async (email: string, password: string) => {
     set({ status: "loading", error: null });
     try {
+      addBreadcrumb({ message: 'Login attempt', category: 'auth', data: { email } });
       await signIn(email, password);
       const user = await getCurrentUser();
       if (user) {
         setSentryUser({ id: user.$id, email: user.email, username: user.name });
+        addBreadcrumb({ message: 'Login successful', category: 'auth', level: 'info', data: { userId: user.$id } });
         set({ user: { id: user.$id, email: user.email, name: user.name }, token: user.$id, status: "authenticated", error: null });
       }
     } catch (err) {
       const errorMsg = err instanceof Error ? err.message : "Login failed";
-      captureException(err instanceof Error ? err : new Error(errorMsg), { email });
+      captureException(err instanceof Error ? err : new Error(errorMsg), {
+        tags: { operation: 'login', feature: 'auth' },
+        contexts: { auth: { email, errorMsg } }
+      });
       set({ status: "error", error: errorMsg });
       throw err;
     }
@@ -53,6 +58,7 @@ export const useSessionStore = create<SessionState>((set) => ({
   signup: async (email: string, password: string, firstName: string, lastName: string) => {
     set({ status: "loading", error: null });
     try {
+      addBreadcrumb({ message: 'Signup attempt', category: 'auth', data: { email, firstName, lastName } });
       const fullName = `${firstName} ${lastName}`.trim();
       const authUser = await createAccount(email, password, fullName);
       await signIn(email, password);
@@ -63,11 +69,15 @@ export const useSessionStore = create<SessionState>((set) => ({
       const user = await getCurrentUser();
       if (user) {
         setSentryUser({ id: user.$id, email: user.email, username: fullName });
+        addBreadcrumb({ message: 'Signup successful', category: 'auth', level: 'info', data: { userId: user.$id } });
         set({ user: { id: user.$id, email: user.email, name: fullName, firstName, lastName }, token: user.$id, status: "authenticated", error: null });
       }
     } catch (err) {
       const errorMsg = err instanceof Error ? err.message : "Signup failed";
-      captureException(err instanceof Error ? err : new Error(errorMsg), { email, firstName, lastName });
+      captureException(err instanceof Error ? err : new Error(errorMsg), {
+        tags: { operation: 'signup', feature: 'auth' },
+        contexts: { auth: { email, firstName, lastName, errorMsg } }
+      });
       set({ status: "error", error: errorMsg });
       throw err;
     }

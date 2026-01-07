@@ -86,3 +86,16 @@ export function setUser(user: { id: string; email?: string; username?: string })
 export function clearUser() {
   Sentry.setUser(null);
 }
+
+// Helper to add breadcrumbs for tracking user flow
+export function addBreadcrumb(breadcrumb: {
+  message: string;
+  category?: string;
+  level?: Sentry.SeverityLevel;
+  data?: Record<string, any>;
+}) {
+  Sentry.addBreadcrumb(breadcrumb);
+}
+
+// Export ErrorBoundary for wrapping components
+export const ErrorBoundary = Sentry.ErrorBoundary;

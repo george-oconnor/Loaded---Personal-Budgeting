@@ -1,5 +1,5 @@
 import { Account, Client, Databases, ID, Query } from "appwrite";
-import { captureException } from "./sentry";
+import { addBreadcrumb, captureException } from "./sentry";
 
 const endpoint = process.env.EXPO_PUBLIC_APPWRITE_ENDPOINT;
 const projectId = process.env.EXPO_PUBLIC_APPWRITE_PROJECT_ID;
@@ -32,11 +32,33 @@ export const account = new Account(appwriteClient);
 
 // Auth functions
 export async function createAccount(email: string, password: string, name: string) {
-  return await account.create(ID.unique(), email, password, name);
+  try {
+    addBreadcrumb({ message: 'Creating account', category: 'auth', data: { email, name } });
+    const result = await account.create(ID.unique(), email, password, name);
+    addBreadcrumb({ message: 'Account created successfully', category: 'auth', level: 'info' });
+    return result;
+  } catch (err) {
+    captureException(err instanceof Error ? err : new Error(String(err)), {
+      tags: { operation: 'create_account', feature: 'auth' },
+      contexts: { auth: { email, name } }
+    });
+    throw err;
+  }
 }
 
 export async function signIn(email: string, password: string) {
-  return await account.createEmailPasswordSession(email, password);
+  try {
+    addBreadcrumb({ message: 'Attempting sign in', category: 'auth', data: { email } });
+    const result = await account.createEmailPasswordSession(email, password);
+    addBreadcrumb({ message: 'Sign in successful', category: 'auth', level: 'info' });
+    return result;
+  } catch (err) {
+    captureException(err instanceof Error ? err : new Error(String(err)), {
+      tags: { operation: 'sign_in', feature: 'auth' },
+      contexts: { auth: { email } }
+    });
+    throw err;
+  }
 }
 
 export async function signOut() {
@@ -666,12 +688,20 @@ export async function createTransaction(
     data.importBatchId = importBatchId;
   }
   
-  return await databases.createDocument(
-    databaseId, 
-    transactionsTableId, 
-    customId || ID.unique(), // Use custom ID if provided, otherwise generate
-    data
-  );
+  try {
+    return await databases.createDocument(
+      databaseId, 
+      transactionsTableId, 
+      customId || ID.unique(), // Use custom ID if provided, otherwise generate
+      data
+    );
+  } catch (err) {
+    captureException(err instanceof Error ? err : new Error(String(err)), {
+      tags: { operation: 'create_transaction', feature: 'transactions' },
+      contexts: { transaction: { title, amount, kind, categoryId, userId } }
+    });
+    throw err;
+  }
 }
 
 export async function updateTransaction(
@@ -713,12 +743,20 @@ export async function updateTransaction(
     data.hideMerchantIcon = updates.hideMerchantIcon;
   }
   
-  return await databases.updateDocument(
-    databaseId,
-    transactionsTableId,
-    transactionId,
-    data
-  );
+  try {
+    return await databases.updateDocument(
+      databaseId,
+      transactionsTableId,
+      transactionId,
+      data
+    );
+  } catch (err) {
+    captureException(err instanceof Error ? err : new Error(String(err)), {
+      tags: { operation: 'update_transaction', feature: 'transactions' },
+      contexts: { transaction: { transactionId, updates } }
+    });
+    throw err;
+  }
 }
 
 export type BulkCreateResult = {

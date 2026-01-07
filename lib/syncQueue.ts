@@ -4,7 +4,7 @@ import * as Notifications from 'expo-notifications';
 import { AppState } from 'react-native';
 import { createBulkTransactions, databases } from './appwrite';
 import { getDeleteStatus } from './deleteQueue';
-import { captureException } from './sentry';
+import { addBreadcrumb, captureException } from './sentry';
 
 export interface QueuedTransaction {
   id: string;
@@ -74,6 +74,7 @@ export async function queueTransactionsForSync(
   }[]
 ): Promise<QueuedTransaction[]> {
   try {
+    addBreadcrumb({ message: `Queueing ${transactions.length} transactions for sync`, category: 'sync', data: { userId, count: transactions.length } });
     const queue = await getQueuedTransactions();
     const newTransactions: QueuedTransaction[] = transactions.map((t, i) => ({
       id: ID.unique(), // Generate valid Appwrite document ID
@@ -90,6 +91,10 @@ export async function queueTransactionsForSync(
     return newTransactions;
   } catch (error) {
     console.error('Error queuing transactions:', error);
+    captureException(error instanceof Error ? error : new Error(String(error)), {
+      tags: { operation: 'queue_transactions', feature: 'sync' },
+      contexts: { sync: { userId, transactionCount: transactions.length } }
+    });
     throw error;
   }
 }
