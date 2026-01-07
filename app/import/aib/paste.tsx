@@ -11,7 +11,7 @@ import * as Clipboard from "expo-clipboard";
 import * as DocumentPicker from "expo-document-picker";
 import * as FileSystem from "expo-file-system/legacy";
 import { router, useLocalSearchParams } from "expo-router";
-import { useEffect, useState } from "react";
+import React, { useEffect, useState } from "react";
 import {
     ActivityIndicator,
     Alert,
@@ -48,13 +48,26 @@ export default function AibImportPasteScreen() {
   const [csvContent, setCSVContent] = useState("");
   const [loading, setLoading] = useState(false);
   const { user } = useSessionStore();
+  const autoProcessTriggered = React.useRef(false);
 
-  // If CSV content was passed as a parameter, set it automatically
+  // If CSV content was passed as a parameter, set it and auto-proceed to preview
   useEffect(() => {
-    if (params.csvContent) {
+    if (params.csvContent && !autoProcessTriggered.current) {
+      autoProcessTriggered.current = true;
       setCSVContent(params.csvContent);
     }
   }, [params.csvContent]);
+
+  // Auto-proceed to preview when CSV content is set via share (not manual paste)
+  useEffect(() => {
+    if (csvContent && autoProcessTriggered.current && !loading) {
+      // Small delay to ensure state is settled, then auto-process
+      const timer = setTimeout(() => {
+        handleContinue();
+      }, 100);
+      return () => clearTimeout(timer);
+    }
+  }, [csvContent]);
 
   // Robust AIB date parser: supports DD/MM/YYYY and DD/MM/YY
   const parseAibDate = (raw: string | undefined): Date => {
