@@ -10,9 +10,8 @@ import {
 import { useSessionStore } from "@/store/useSessionStore";
 import { Feather } from "@expo/vector-icons";
 import * as Clipboard from "expo-clipboard";
-import React from "react";
 import { router, useLocalSearchParams } from "expo-router";
-import { useEffect, useState } from "react";
+import React, { useEffect, useState } from "react";
 import {
     ActivityIndicator,
     Alert,
