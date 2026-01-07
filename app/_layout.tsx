@@ -126,23 +126,51 @@ export default function RootLayout() {
           }
 
           const tempPath = `${cacheDir}${Date.now()}.csv`;
-          console.log('CSV import: Copying to temp path:', tempPath);
-          
-          // Copy file to app sandbox
-          await FileSystem.copyAsync({
-            from: event.url,
-            to: tempPath
-          });
-          
-          captureMessage('CSV import: File copied to cache', {
-            level: 'info',
-            contexts: { csv_import: { fileUrl: event.url, tempPath } },
-            tags: { feature: 'csv_import', event_type: 'file_copied' }
-          });
+          console.log('CSV import: Temp path prepared:', tempPath);
 
-          // Read the file content from cache
-          console.log('CSV import: Reading file from cache...');
-          const fileContent = await FileSystem.readAsStringAsync(tempPath);
+          // First try reading directly from the source URL (some providers allow direct read)
+          let fileContent: string | null = null;
+          try {
+            console.log('CSV import: Attempting direct read from source');
+            fileContent = await FileSystem.readAsStringAsync(event.url);
+            captureMessage('CSV import: Direct read succeeded', {
+              level: 'info',
+              contexts: { csv_import: { fileUrl: event.url } },
+              tags: { feature: 'csv_import', event_type: 'file_read_direct' }
+            });
+          } catch (directReadError) {
+            console.warn('CSV import: Direct read failed, will attempt copy:', directReadError);
+            // Fallback: copy to cache then read
+            try {
+              console.log('CSV import: Copying to temp path:', tempPath);
+              await FileSystem.copyAsync({
+                from: event.url,
+                to: tempPath
+              });
+              captureMessage('CSV import: File copied to cache', {
+                level: 'info',
+                contexts: { csv_import: { fileUrl: event.url, tempPath } },
+                tags: { feature: 'csv_import', event_type: 'file_copied' }
+              });
+              console.log('CSV import: Reading file from cache...');
+              fileContent = await FileSystem.readAsStringAsync(tempPath);
+            } catch (copyError) {
+              console.error('CSV import: copy/read failed', copyError);
+              captureException(copyError instanceof Error ? copyError : new Error(String(copyError)), {
+                contexts: { csv_import: { fileUrl: event.url, tempPath } },
+                tags: { feature: 'csv_import', event_type: 'copy_failed' }
+              });
+              Alert.alert('Error', 'Unable to read the shared file. Please try exporting again.');
+              return;
+            }
+          }
+
+          if (!fileContent) {
+            Alert.alert('Error', 'No data found in the shared file');
+            return;
+          }
+          
+          console.log('CSV import: File read successful, length:', fileContent?.length);
           console.log('CSV import: File read successful, length:', fileContent?.length);
           
           if (!fileContent || fileContent.trim().length === 0) {
