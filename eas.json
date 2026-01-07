@@ -19,7 +19,10 @@
     },
     "production": {
       "ios": {
-        "resourceClass": "medium"
+        "resourceClass": "medium",
+        "env": {
+          "EXPO_PUBLIC_SENTRY_DSN": "https://***REMOVED***@oXXXXXXXXXXXXXXX.ingest.de.sentry.io/XXXXXXXXXXXX"
+        }
       }
     },
     "testflight": {
@@ -35,7 +38,8 @@
           "EXPO_PUBLIC_APPWRITE_TABLE_CATEGORIES": "categories",
           "EXPO_PUBLIC_APPWRITE_TABLE_USERS": "users",
           "EXPO_PUBLIC_APPWRITE_TABLE_BALANCES": "balances",
-          "EXPO_PUBLIC_APPWRITE_TABLE_MERCHANT_VOTES": "merchant_votes"
+          "EXPO_PUBLIC_APPWRITE_TABLE_MERCHANT_VOTES": "merchant_votes",
+          "EXPO_PUBLIC_SENTRY_DSN": "https://***REMOVED***@oXXXXXXXXXXXXXXX.ingest.de.sentry.io/XXXXXXXXXXXX"
         }
       },
       "android": {
