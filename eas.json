@@ -1,0 +1,61 @@
+{
+  "cli": {
+    "version": ">= 5.9.1",
+    "appVersionSource": "local"
+  },
+  "build": {
+    "preview": {
+      "ios": {
+        "simulator": true
+      }
+    },
+    "preview2": {
+      "android": {
+        "gradleCommand": ":app:assembleRelease"
+      }
+    },
+    "preview3": {
+      "developmentClient": true
+    },
+    "production": {
+      "ios": {
+        "resourceClass": "medium"
+      }
+    },
+    "testflight": {
+      "ios": {
+        "resourceClass": "medium",
+        "env": {
+          "EXPO_PUBLIC_APPWRITE_PROJECT_ID": "***REMOVED-PROJECT-ID***",
+          "EXPO_PUBLIC_APPWRITE_PROJECT_NAME": "budget-app",
+          "EXPO_PUBLIC_APPWRITE_ENDPOINT": "https://YOUR-INSTANCE.appwrite.io/v1",
+          "EXPO_PUBLIC_APPWRITE_DATABASE_ID": "***REMOVED-DATABASE-ID***",
+          "EXPO_PUBLIC_APPWRITE_TABLE_TRANSACTIONS": "transactions",
+          "EXPO_PUBLIC_APPWRITE_TABLE_BUDGETS": "budgets",
+          "EXPO_PUBLIC_APPWRITE_TABLE_CATEGORIES": "categories",
+          "EXPO_PUBLIC_APPWRITE_TABLE_USERS": "users",
+          "EXPO_PUBLIC_APPWRITE_TABLE_BALANCES": "balances",
+          "EXPO_PUBLIC_APPWRITE_TABLE_MERCHANT_VOTES": "merchant_votes"
+        }
+      },
+      "android": {
+        "buildType": "app-bundle",
+        "gradleCommand": ":app:bundleRelease"
+      }
+    }
+  },
+  "submit": {
+    "production": {
+      "ios": {
+        "ascAppId": "6756985580",
+        "groups": ["External Testers"]
+      }
+    },
+    "testflight": {
+      "ios": {
+        "ascAppId": "6756985580",
+        "groups": ["External Testers"]
+      }
+    }
+  }
+}
