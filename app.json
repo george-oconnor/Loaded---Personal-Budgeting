@@ -11,12 +11,12 @@
     "description": "Loaded - Smart personal finance tracker. Track spending, set budgets, and gain insights into your money.",
     "ios": {
       "displayName": "Loaded",
-      "buildNumber": "28",
+      "buildNumber": "29",
       "supportsTablet": true,
       "bundleIdentifier": "com.georgeoc.budgetapp",
       "infoPlist": {
         "ITSAppUsesNonExemptEncryption": false,
-        "LSSupportsOpeningDocumentsInPlace": true,
+        "LSSupportsOpeningDocumentsInPlace": false,
         "NSFaceIDUsageDescription": "Use Face ID to securely access your budget data.",
         "NSCameraUsageDescription": "Camera access is used to scan receipts (if feature is enabled).",
         "NSPhotoLibraryUsageDescription": "Photo library access is used to attach receipt images to transactions.",
