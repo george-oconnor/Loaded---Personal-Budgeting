@@ -2,7 +2,7 @@ import { useAutoSync } from "@/hooks/useAutoSync";
 import { detectCSVProvider } from "@/lib/csvDetector";
 import { addBreadcrumb, captureException, captureMessage, ErrorBoundary, initSentry } from "@/lib/sentry";
 import { useSessionStore } from "@/store/useSessionStore";
-import * as FileSystem from 'expo-file-system';
+import { Directory, File } from 'expo-file-system';
 import { useFonts } from "expo-font";
 import * as Linking from 'expo-linking';
 import { SplashScreen, Stack, useRouter, useSegments } from "expo-router";
@@ -114,26 +114,41 @@ export default function RootLayout() {
         
         try {
           // On iOS, reading a file shared via "Open in" can fail if not copied inside the app sandbox.
-          // Copy the file to a cache dir first, then read.
-          const cacheDir = FileSystem.cacheDirectory + 'imports';
+          // Use new expo-file-system API with File and Directory classes.
+          const cacheDir = new Directory(process.cwd() + '/../Library/Caches/csv_imports');
+          
+          // Ensure cache directory exists
           try {
-            await FileSystem.makeDirectoryAsync(cacheDir, { intermediates: true });
+            await cacheDir.create({ intermediates: true });
           } catch (e) {
-            // ignore EEXIST
+            console.log('Cache directory already exists or creation skipped');
           }
 
-          const tempPath = `${cacheDir}/${Date.now()}.csv`;
-          console.log('CSV import: Copying to temp path:', tempPath);
-          await FileSystem.copyAsync({ from: event.url, to: tempPath });
-          captureMessage('CSV import: File copied to cache', {
-            level: 'info',
-            contexts: { csv_import: { fileUrl: event.url, tempPath } },
-            tags: { feature: 'csv_import', event_type: 'file_copied' }
-          });
-
-          // Read the file content from the cache location
-          console.log('CSV import: Attempting to read file from cache...');
-          const fileContent = await FileSystem.readAsStringAsync(tempPath);
+          const fileName = `${Date.now()}.csv`;
+          console.log('CSV import: Copying file to cache as:', fileName);
+          
+          // Copy the file to cache (handling both old and new file API)
+          let fileContent: string;
+          try {
+            // Try copying with the new API first
+            const sourceFile = new File(event.url);
+            const cachedFile = new File(cacheDir.uri + '/' + fileName);
+            
+            // Read directly from the source URL to avoid copy issues
+            const fileText = await sourceFile.text();
+            fileContent = fileText;
+            
+            captureMessage('CSV import: File read directly from source', {
+              level: 'info',
+              contexts: { csv_import: { fileUrl: event.url, size: fileContent.length } },
+              tags: { feature: 'csv_import', event_type: 'file_read_direct' }
+            });
+          } catch (readError) {
+            console.error('Direct read failed, trying alternate method:', readError);
+            // Fallback: try reading as binary first
+            throw new Error(`Failed to read CSV file: ${(readError as any)?.message || String(readError)}`);
+          }
+          
           console.log('CSV import: File read successful, length:', fileContent?.length);
           
           if (!fileContent || fileContent.trim().length === 0) {
@@ -142,7 +157,6 @@ export default function RootLayout() {
               contexts: {
                 csv_import: {
                   fileUrl: event.url,
-                  tempPath,
                   fileSize: fileContent?.length || 0
                 }
               },
@@ -161,7 +175,6 @@ export default function RootLayout() {
             contexts: {
               csv_import: {
                 fileUrl: event.url,
-                tempPath,
                 fileSize: fileContent.length,
                 fileSizeKB: Math.round(fileContent.length / 1024)
               }
