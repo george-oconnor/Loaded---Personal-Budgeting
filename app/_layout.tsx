@@ -128,21 +128,26 @@ export default function RootLayout() {
           const tempPath = `${cacheDir}${Date.now()}.csv`;
           console.log('CSV import: Temp path prepared:', tempPath);
 
-          // First try reading directly from the source URL (some providers allow direct read)
+          // Try multiple methods to read the file
           let fileContent: string | null = null;
+          let readMethod = 'unknown';
+          
+          // Method 1: Try direct read (works for files in app sandbox or Inbox)
           try {
-            console.log('CSV import: Attempting direct read from source');
+            console.log('CSV import: Method 1 - Attempting direct read from source');
             fileContent = await FileSystem.readAsStringAsync(event.url);
+            readMethod = 'direct_read';
             captureMessage('CSV import: Direct read succeeded', {
               level: 'info',
               contexts: { csv_import: { fileUrl: event.url } },
               tags: { feature: 'csv_import', event_type: 'file_read_direct' }
             });
           } catch (directReadError) {
-            console.warn('CSV import: Direct read failed, will attempt copy:', directReadError);
-            // Fallback: copy to cache then read
+            console.warn('CSV import: Direct read failed:', directReadError);
+            
+            // Method 2: Try copy then read (works for some shared files)
             try {
-              console.log('CSV import: Copying to temp path:', tempPath);
+              console.log('CSV import: Method 2 - Attempting copy to cache');
               await FileSystem.copyAsync({
                 from: event.url,
                 to: tempPath
@@ -154,14 +159,43 @@ export default function RootLayout() {
               });
               console.log('CSV import: Reading file from cache...');
               fileContent = await FileSystem.readAsStringAsync(tempPath);
+              readMethod = 'copy_then_read';
             } catch (copyError) {
-              console.error('CSV import: copy/read failed', copyError);
-              captureException(copyError instanceof Error ? copyError : new Error(String(copyError)), {
-                contexts: { csv_import: { fileUrl: event.url, tempPath } },
-                tags: { feature: 'csv_import', event_type: 'copy_failed' }
-              });
-              Alert.alert('Error', 'Unable to read the shared file. Please try exporting again.');
-              return;
+              console.warn('CSV import: Copy failed:', copyError);
+              
+              // Method 3: Try reading with different encoding options
+              try {
+                console.log('CSV import: Method 3 - Attempting read with base64 encoding');
+                const base64Content = await FileSystem.readAsStringAsync(event.url, {
+                  encoding: FileSystem.EncodingType.Base64
+                });
+                // Decode base64 to string
+                fileContent = atob(base64Content);
+                readMethod = 'base64_decode';
+              } catch (base64Error) {
+                console.error('CSV import: All read methods failed');
+                captureException(copyError instanceof Error ? copyError : new Error(String(copyError)), {
+                  contexts: { 
+                    csv_import: { 
+                      fileUrl: event.url, 
+                      tempPath,
+                      directReadError: String(directReadError),
+                      base64Error: String(base64Error)
+                    } 
+                  },
+                  tags: { feature: 'csv_import', event_type: 'all_methods_failed' }
+                });
+                
+                // Show helpful error with workaround suggestion
+                Alert.alert(
+                  'Unable to Read File',
+                  'This file cannot be read directly. Please try one of these options:\n\n' +
+                  '1. Open the CSV in Files app, tap Share, then select Loaded\n\n' +
+                  '2. Use the "Import from Files" button in the app instead',
+                  [{ text: 'OK' }]
+                );
+                return;
+              }
             }
           }
 
@@ -170,8 +204,7 @@ export default function RootLayout() {
             return;
           }
           
-          console.log('CSV import: File read successful, length:', fileContent?.length);
-          console.log('CSV import: File read successful, length:', fileContent?.length);
+          console.log('CSV import: File read successful via', readMethod, 'length:', fileContent?.length);
           
           if (!fileContent || fileContent.trim().length === 0) {
             captureMessage('CSV import: Empty file detected', {
