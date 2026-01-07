@@ -11,7 +11,7 @@
     "description": "Loaded - Smart personal finance tracker. Track spending, set budgets, and gain insights into your money.",
     "ios": {
       "displayName": "Loaded",
-      "buildNumber": "24",
+      "buildNumber": "25",
       "supportsTablet": true,
       "bundleIdentifier": "com.georgeoc.budgetapp",
       "infoPlist": {
