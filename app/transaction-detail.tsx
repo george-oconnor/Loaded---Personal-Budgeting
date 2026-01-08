@@ -336,7 +336,11 @@ export default function TransactionDetailScreen() {
       }
 
       // Learn this merchant-category mapping for future imports
+      // Store both the raw title and displayName to improve matching
       await learnMerchantCategory(transaction.title, newCategoryId, user?.id);
+      if (transaction.displayName && transaction.displayName !== transaction.title) {
+        await learnMerchantCategory(transaction.displayName, newCategoryId, user?.id);
+      }
 
       // Update the transaction state
       setTransaction({

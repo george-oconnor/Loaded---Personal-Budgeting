@@ -22,6 +22,46 @@ function getMerchantKey(title: string): string {
 }
 
 /**
+ * Find a matching merchant key using fuzzy matching
+ * Returns the categoryId if a match is found, null otherwise
+ * 
+ * Matching strategy:
+ * 1. Exact match on normalized key
+ * 2. Stored key is contained within the new title (e.g., "tesco" matches "tescostores1234")
+ * 3. New key is contained within stored key (e.g., "tescostores" matches "tesco" if min length)
+ */
+function findMatchingCategory(
+  titleKey: string,
+  learnedMappings: MerchantMapping
+): string | null {
+  // 1. Exact match
+  if (learnedMappings[titleKey]) {
+    return learnedMappings[titleKey];
+  }
+
+  // 2 & 3. Substring matching - find the best match
+  const merchantKeys = Object.keys(learnedMappings);
+  
+  for (const storedKey of merchantKeys) {
+    // Skip very short keys (less than 4 chars) to avoid false positives
+    if (storedKey.length < 4) continue;
+    
+    // Check if stored key is contained in the new title
+    if (titleKey.includes(storedKey)) {
+      return learnedMappings[storedKey];
+    }
+    
+    // Check if new title is contained in stored key (for partial matches)
+    // Only if the new title key is substantial (at least 5 chars)
+    if (titleKey.length >= 5 && storedKey.includes(titleKey)) {
+      return learnedMappings[storedKey];
+    }
+  }
+
+  return null;
+}
+
+/**
  * Get learned merchant mappings from database (crowd-sourced, most popular category wins)
  */
 async function getLearnedMappings(): Promise<MerchantMapping> {
@@ -329,12 +369,13 @@ export async function categorizeTransaction(
   description: string,
   isExpense: boolean
 ): Promise<string> {
-  // 1. Check learned merchant mappings (these already store Appwrite IDs)
+  // 1. Check learned merchant mappings with fuzzy matching
   const merchantKey = getMerchantKey(title);
   const learnedMappings = await getLearnedMappings();
   
-  if (learnedMappings[merchantKey]) {
-    return learnedMappings[merchantKey];
+  const fuzzyMatch = findMatchingCategory(merchantKey, learnedMappings);
+  if (fuzzyMatch) {
+    return fuzzyMatch;
   }
 
   // 2. Try keyword matching on both title and description
@@ -377,10 +418,11 @@ export async function batchCategorizeTransactions(
   return transactions.map(tx => {
     const isExpense = tx.kind === 'expense';
     
-    // 1. Check learned merchant mappings
+    // 1. Check learned merchant mappings with fuzzy matching
     const merchantKey = getMerchantKey(tx.title);
-    if (learnedMappings[merchantKey]) {
-      return learnedMappings[merchantKey];
+    const fuzzyMatch = findMatchingCategory(merchantKey, learnedMappings);
+    if (fuzzyMatch) {
+      return fuzzyMatch;
     }
 
     // 2. Try keyword matching

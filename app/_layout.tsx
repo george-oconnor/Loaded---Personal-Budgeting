@@ -209,23 +209,6 @@ export default function RootLayout() {
             return;
           }
 
-          // Log successful file read with file size
-          captureMessage('CSV import: File read successfully', {
-            level: 'info',
-            contexts: {
-              csv_import: {
-                fileUrl: event.url,
-                tempPath,
-                fileSize: fileContent.length,
-                fileSizeKB: Math.round(fileContent.length / 1024)
-              }
-            },
-            tags: {
-              feature: 'csv_import',
-              event_type: 'file_read_success'
-            }
-          });
-
           // Detect the CSV provider (AIB or Revolut)
           const provider = detectCSVProvider(fileContent);
 
