@@ -98,19 +98,7 @@ export default function RootLayout() {
       // Handle file:// URLs (CSV files shared to the app)
       if (event.url.startsWith('file://')) {
         console.log('CSV import: Handling file URL:', event.url);
-        captureMessage('CSV import: Handler invoked', {
-          level: 'info',
-          contexts: {
-            csv_import: {
-              fileUrl: event.url,
-              urlScheme: event.url.split('://')[0]
-            }
-          },
-          tags: {
-            feature: 'csv_import',
-            event_type: 'handler_invoked'
-          }
-        });
+        // CSV import handler invoked - no need to log to Sentry
         
         try {
           // On iOS, reading a file shared via "Open in" requires copying to app sandbox
@@ -137,11 +125,7 @@ export default function RootLayout() {
             console.log('CSV import: Method 1 - Attempting direct read from source');
             fileContent = await FileSystem.readAsStringAsync(event.url);
             readMethod = 'direct_read';
-            captureMessage('CSV import: Direct read succeeded', {
-              level: 'info',
-              contexts: { csv_import: { fileUrl: event.url } },
-              tags: { feature: 'csv_import', event_type: 'file_read_direct' }
-            });
+            // Direct read succeeded - no need to log to Sentry
           } catch (directReadError) {
             console.warn('CSV import: Direct read failed:', directReadError);
             
