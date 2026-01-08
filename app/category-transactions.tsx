@@ -249,6 +249,7 @@ export default function CategoryTransactionsScreen() {
             }
 
             const tx = item.transaction!;
+            const txCategory = categories.find((c) => c.id === tx.categoryId);
             return (
               <Swipeable
                 key={tx.id}
@@ -268,7 +269,7 @@ export default function CategoryTransactionsScreen() {
                   <TransactionListItem
                     transaction={tx}
                     currency={currency}
-                    categoryName={category?.name}
+                    categoryName={txCategory?.name || category?.name}
                     onPress={() => {
                       useTransactionDetailStore.getState().setSelectedTransactionId(tx.id);
                       router.push("/transaction-detail");

@@ -42,6 +42,7 @@ export default function AddTransactionScreen() {
   const loadCategories = async () => {
     try {
       const cats = await getCategories();
+      console.log("addTransaction - loaded categories:", cats.map(c => ({ id: c.$id, name: c.name })));
       setCategories(cats as any);
       if (cats.length > 0) {
         // Try to find "General" category, otherwise use first category

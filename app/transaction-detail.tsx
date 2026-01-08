@@ -870,7 +870,7 @@ export default function TransactionDetailScreen() {
 
             {/* Categories List */}
             <FlatList
-              data={categories.filter(cat => cat.id !== "all" && !cat.name?.toLowerCase().includes("transfer"))}
+              data={categories.filter(cat => cat.id !== "all")}
               keyExtractor={cat => cat.id}
               renderItem={({ item }) => (
                 <Pressable
