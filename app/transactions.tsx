@@ -53,6 +53,11 @@ export default function AllTransactionsScreen() {
     loadTransactions(true);
   }, []);
 
+  // Reload when filter changes
+  useEffect(() => {
+    loadTransactions(true);
+  }, [selectedFilter]);
+
   const loadTransactions = async (reset: boolean = false) => {
     if (!user?.id) return;
     
