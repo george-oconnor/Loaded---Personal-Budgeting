@@ -975,4 +975,84 @@ export async function deleteTransactionsByBatchId(userId: string, batchId: strin
   return { deleted, failed };
 }
 
+// Delete all user data and account
+// This function prioritizes disabling the account immediately, then queues data deletion
+export async function deleteUserAccount(userId: string): Promise<{ success: boolean; error?: string }> {
+  if (!databaseId) throw new Error("Appwrite env not configured");
+
+  try {
+    addBreadcrumb({ message: 'Starting account deletion', category: 'auth', data: { userId } });
+
+    // 1. FIRST: Disable the Appwrite auth account immediately
+    // This prevents the user from logging back in while data is being cleaned up
+    console.log("Disabling auth account...");
+    try {
+      await account.updateStatus();
+      console.log("Auth account disabled successfully");
+    } catch (err) {
+      // If we can't disable the account, we should not proceed
+      console.error("Failed to disable account:", err);
+      throw new Error("Failed to disable account. Please try again.");
+    }
+
+    // 2. Delete small data sets synchronously (budgets, balances, profile)
+    // These are small and won't hit rate limits
+    
+    // Delete budget documents
+    if (budgetsTableId) {
+      console.log("Deleting user budgets...");
+      try {
+        const budgets = await databases.listDocuments(databaseId, budgetsTableId, [
+          Query.equal("userId", userId),
+        ]);
+        for (const doc of budgets.documents) {
+          await databases.deleteDocument(databaseId, budgetsTableId, doc.$id);
+        }
+      } catch (err) {
+        console.log("Error deleting budgets (continuing):", err);
+      }
+    }
+
+    // Delete account balances
+    if (balancesTableId) {
+      console.log("Deleting user account balances...");
+      try {
+        const balances = await databases.listDocuments(databaseId, balancesTableId, [
+          Query.equal("userId", userId),
+        ]);
+        for (const doc of balances.documents) {
+          await databases.deleteDocument(databaseId, balancesTableId, doc.$id);
+        }
+      } catch (err) {
+        console.log("Error deleting balances (continuing):", err);
+      }
+    }
+
+    // Delete user profile document
+    if (usersTableId) {
+      console.log("Deleting user profile...");
+      try {
+        await databases.deleteDocument(databaseId, usersTableId, userId);
+      } catch (err) {
+        // Profile might not exist, continue
+        console.log("User profile not found or already deleted");
+      }
+    }
+
+    // 3. Transactions will be deleted via the background queue
+    // Don't block account deletion on this - the account is already disabled
+    // The deleteQueue will handle transaction cleanup in the background
+    console.log("Account disabled. Transaction cleanup will happen in background.");
+
+    addBreadcrumb({ message: 'Account deletion completed', category: 'auth', level: 'info' });
+    return { success: true };
+  } catch (err) {
+    console.error("deleteUserAccount error:", err);
+    captureException(err instanceof Error ? err : new Error(String(err)), {
+      tags: { operation: 'delete_account', feature: 'auth' },
+      contexts: { deletion: { userId } }
+    });
+    return { success: false, error: err instanceof Error ? err.message : "Failed to delete account" };
+  }
+}
 

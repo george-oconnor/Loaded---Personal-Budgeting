@@ -59,6 +59,7 @@ export type SessionState = {
   login: (email: string, password: string) => Promise<void>;
   signup: (email: string, password: string, firstName: string, lastName: string) => Promise<void>;
   logout: () => Promise<void>;
+  deleteAccount: () => Promise<{ success: boolean; error?: string }>;
   setSession: (payload: { user: SessionUser; token: string }) => void;
   setStatus: (status: SessionStatus) => void;
   setError: (message: string | null) => void;

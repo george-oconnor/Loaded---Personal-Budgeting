@@ -1,4 +1,5 @@
-import { createAccount, createUserProfile, getCurrentSession, getCurrentUser, signIn, signOut } from "@/lib/appwrite";
+import { createAccount, createUserProfile, deleteUserAccount, getCurrentSession, getCurrentUser, signIn, signOut } from "@/lib/appwrite";
+import { queueDeleteAll } from "@/lib/deleteQueue";
 import { addBreadcrumb, captureException, clearUser as clearSentryUser, setUser as setSentryUser } from "@/lib/sentry";
 import type { SessionState } from "@/types/type";
 import { create } from "zustand";
@@ -92,6 +93,39 @@ export const useSessionStore = create<SessionState>((set) => ({
       const errorMsg = err instanceof Error ? err.message : "Logout failed";
       captureException(err instanceof Error ? err : new Error(errorMsg));
       set({ error: errorMsg });
+    }
+  },
+
+  deleteAccount: async () => {
+    const state = useSessionStore.getState();
+    const userId = state.user?.id;
+    
+    if (!userId) {
+      return { success: false, error: "No user logged in" };
+    }
+
+    try {
+      addBreadcrumb({ message: 'Account deletion initiated', category: 'auth', data: { userId } });
+      
+      // Queue transaction deletion in the background FIRST
+      // This way even if the user closes the app, transactions will be cleaned up later
+      await queueDeleteAll(userId);
+      
+      // Now disable the account and delete other data
+      const result = await deleteUserAccount(userId);
+      
+      if (result.success) {
+        clearSentryUser();
+        set({ user: null, token: null, status: "unauthenticated", error: null });
+      }
+      
+      return result;
+    } catch (err) {
+      const errorMsg = err instanceof Error ? err.message : "Failed to delete account";
+      captureException(err instanceof Error ? err : new Error(errorMsg), {
+        tags: { operation: 'delete_account', feature: 'auth' },
+      });
+      return { success: false, error: errorMsg };
     }
   },
 

@@ -17,11 +17,12 @@ import {
 import { SafeAreaView } from "react-native-safe-area-context";
 
 export default function ProfileScreen() {
-  const { user, logout } = useSessionStore();
+  const { user, logout, deleteAccount } = useSessionStore();
   const { fetchHome } = useHomeStore();
   const [loading, setLoading] = useState(false);
   const [deleting, setDeleting] = useState(false);
   const [undoLoading, setUndoLoading] = useState(false);
+  const [deletingAccount, setDeletingAccount] = useState(false);
   const initials = user?.name
     ?.split(" ")
     .map((n) => n[0])
@@ -137,6 +138,57 @@ export default function ProfileScreen() {
     );
   };
 
+  const handleDeleteAccount = async () => {
+    if (!user?.id) return;
+
+    Alert.alert(
+      "Delete Account",
+      "Are you sure you want to permanently delete your account? This will delete all your data including transactions, budgets, and account balances. This action cannot be undone.",
+      [
+        {
+          text: "Cancel",
+          style: "cancel",
+        },
+        {
+          text: "Delete Account",
+          style: "destructive",
+          onPress: () => {
+            // Second confirmation for extra safety
+            Alert.alert(
+              "Final Confirmation",
+              "This is permanent. Type DELETE to confirm you want to delete your account and all associated data.",
+              [
+                { text: "Cancel", style: "cancel" },
+                {
+                  text: "Yes, Delete Everything",
+                  style: "destructive",
+                  onPress: async () => {
+                    setDeletingAccount(true);
+                    try {
+                      const result = await deleteAccount();
+                      
+                      if (result.success) {
+                        router.replace("/auth");
+                      } else {
+                        Alert.alert("Error", result.error || "Failed to delete account. Please try again.");
+                      }
+                    } catch (error) {
+                      const errorMsg = error instanceof Error ? error.message : "Failed to delete account";
+                      Alert.alert("Error", errorMsg);
+                      console.error("Delete account error:", error);
+                    } finally {
+                      setDeletingAccount(false);
+                    }
+                  },
+                },
+              ]
+            );
+          },
+        },
+      ]
+    );
+  };
+
   return (
     <SafeAreaView className="flex-1 bg-white">
       <ScrollView
@@ -185,18 +237,7 @@ export default function ProfileScreen() {
           </View>
         </View>
 
-        {/* Settings Section */}
-        <View className="mb-8">
-          <Text className="text-sm font-semibold text-gray-500 mb-3">Settings</Text>
-          <Pressable className="rounded-xl border border-gray-200 bg-white px-4 py-3 mb-2">
-            <Text className="text-base text-dark-100">Change Password</Text>
-          </Pressable>
-          <Pressable className="rounded-xl border border-gray-200 bg-white px-4 py-3">
-            <Text className="text-base text-dark-100">Notification Settings</Text>
-          </Pressable>
-        </View>
-
-        {/* Logout Button */}
+        {/* Action Buttons */}
         <View className="mt-auto mb-4">
           <Pressable
             onPress={handleUndoLastImport}
@@ -209,23 +250,25 @@ export default function ProfileScreen() {
             </Text>
             {undoLoading && <ActivityIndicator color="#EF4444" size="small" />}
           </Pressable>
-          <Pressable
-            onPress={handleDeleteAllTransactions}
-            disabled={deleting}
-            className={`rounded-2xl py-4 items-center mb-3 ${
-              deleting ? "bg-gray-300" : "bg-orange-500"
-            }`}
-          >
-            {deleting ? (
-              <ActivityIndicator color="#fff" />
-            ) : (
-              <Text className="text-white text-base font-bold">Delete All Transactions</Text>
-            )}
-          </Pressable>
+          {user?.email === "george@georgeoc.com" && (
+            <Pressable
+              onPress={handleDeleteAllTransactions}
+              disabled={deleting}
+              className={`rounded-2xl py-4 items-center mb-3 ${
+                deleting ? "bg-gray-300" : "bg-orange-500"
+              }`}
+            >
+              {deleting ? (
+                <ActivityIndicator color="#fff" />
+              ) : (
+                <Text className="text-white text-base font-bold">Delete All Transactions</Text>
+              )}
+            </Pressable>
+          )}
           <Pressable
             onPress={handleLogout}
             disabled={loading}
-            className={`rounded-2xl py-4 items-center ${
+            className={`rounded-2xl py-4 items-center mb-3 ${
               loading ? "bg-gray-300" : "bg-red-500"
             }`}
           >
@@ -233,6 +276,20 @@ export default function ProfileScreen() {
               <ActivityIndicator color="#fff" />
             ) : (
               <Text className="text-white text-base font-bold">Logout</Text>
+            )}
+          </Pressable>
+
+          {/* Delete Account Button */}
+          <Pressable
+            onPress={handleDeleteAccount}
+            disabled={deletingAccount}
+            className="flex-row items-center justify-center gap-2 border-2 border-red-600 rounded-2xl py-4 active:opacity-70 disabled:opacity-50"
+          >
+            <Feather name="trash-2" size={18} color="#DC2626" />
+            {deletingAccount ? (
+              <ActivityIndicator color="#DC2626" size="small" />
+            ) : (
+              <Text className="text-red-600 text-base font-bold">Delete Account</Text>
             )}
           </Pressable>
         </View>

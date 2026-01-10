@@ -39,13 +39,18 @@ export default function Header({
       const delStatus = await getDeleteStatus();
       setSyncStatus(status);
       setPendingCount(pending);
-      setDeleteStatus(delStatus);
+      // Only show delete status if it belongs to the current user
+      if (delStatus && delStatus.userId === user?.id) {
+        setDeleteStatus(delStatus);
+      } else {
+        setDeleteStatus(null);
+      }
     };
 
     checkSync();
     const interval = setInterval(checkSync, 1000);
     return () => clearInterval(interval);
-  }, []);
+  }, [user?.id]);
 
   useEffect(() => {
     if (syncStatus?.isSyncing || deleteStatus?.status === 'in-progress') {
