@@ -2,10 +2,10 @@ import {
     getCategories,
     getMonthlyBudget,
     getTransactionsForMonth,
-    getTransactionsPaginated,
+    getTransactionsInRangeAll,
     updateMonthlyBudget,
 } from "@/lib/appwrite";
-import { getTransactionsInCurrentCycle } from "@/lib/budgetCycle";
+import { getCycleStartDate, getTransactionsInCurrentCycle } from "@/lib/budgetCycle";
 import { captureException } from "@/lib/sentry";
 import { getQueuedTransactions } from "@/lib/syncQueue";
 import type { Category, Summary, Transaction } from "@/types/type";
@@ -112,13 +112,23 @@ export const useHomeStore = create<HomeState>((set) => ({
         return;
       }
 
-      const rangeStart = new Date(0).toISOString();
+      // First fetch budget doc to determine cycle type for date range calculation
+      const budgetDoc = await getMonthlyBudget(userId);
+      const cycleType = (budgetDoc.cycleType as any) || "first_working_day";
+      const cycleDay = budgetDoc.cycleDay;
+
+      // Calculate date range to fetch: from start of previous cycle to now
+      // This ensures we have data for both current and previous cycle (needed for analytics comparison)
+      const currentCycleStart = getCycleStartDate(cycleType, cycleDay);
+      const prevCycleStart = new Date(currentCycleStart);
+      prevCycleStart.setMonth(prevCycleStart.getMonth() - 1);
+      
+      const rangeStart = prevCycleStart.toISOString();
       const rangeEnd = new Date(now.getTime() + 24 * 60 * 60 * 1000).toISOString();
 
-      const [budgetDoc, monthTxDocs, paginatedResult, catDocs, queuedTxs] = await Promise.all([
-        getMonthlyBudget(userId),
+      const [monthTxDocs, rangeTxDocs, catDocs, queuedTxs] = await Promise.all([
         getTransactionsForMonth(userId, now.getUTCFullYear(), now.getUTCMonth()),
-        getTransactionsPaginated(userId, 100), // Fetch first 100 transactions (same as all transactions screen)
+        getTransactionsInRangeAll(userId, rangeStart, rangeEnd), // Fetch all transactions in range for analytics
         getCategories().catch(() => []),
         getQueuedTransactions(),
       ]);
@@ -133,7 +143,7 @@ export const useHomeStore = create<HomeState>((set) => ({
         .reduce((s, t) => s + Math.abs(t.amount), 0);
       // Note: Summary should reflect current budget cycle, not calendar month.
       // We'll compute income/expenses from combined transactions for the current cycle
-      const transactions: Transaction[] = paginatedResult.documents.map((t) => ({
+      const transactions: Transaction[] = rangeTxDocs.map((t) => ({
         id: (t as any).$id ?? `${t.userId}-${t.date}`,
         title: t.title,
         subtitle: t.subtitle || "",
