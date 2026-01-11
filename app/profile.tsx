@@ -1,16 +1,27 @@
 import { restoreLastBalanceSnapshot } from "@/lib/accountBalances";
 import { deleteTransactionsByBatchId, getLastImportBatchId } from "@/lib/appwrite";
 import { queueDeleteAll } from "@/lib/deleteQueue";
+import {
+    areNotificationsEnabled,
+    cancelAllNotifications,
+    daysSinceImport,
+    getLastImportDates,
+    requestNotificationPermissions,
+    scheduleDailyBudgetCheck,
+    scheduleWeeklyImportReminder,
+} from "@/lib/notifications";
 import { useHomeStore } from "@/store/useHomeStore";
+import { useNotificationStore } from "@/store/useNotificationStore";
 import { useSessionStore } from "@/store/useSessionStore";
 import { Feather } from "@expo/vector-icons";
 import { router } from "expo-router";
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import {
     ActivityIndicator,
     Alert,
     Pressable,
     ScrollView,
+    Switch,
     Text,
     View,
 } from "react-native";
@@ -19,15 +30,79 @@ import { SafeAreaView } from "react-native-safe-area-context";
 export default function ProfileScreen() {
   const { user, logout, deleteAccount } = useSessionStore();
   const { fetchHome } = useHomeStore();
+  const { clearNotifications, unreadCount, openTray } = useNotificationStore();
   const [loading, setLoading] = useState(false);
   const [deleting, setDeleting] = useState(false);
   const [undoLoading, setUndoLoading] = useState(false);
   const [deletingAccount, setDeletingAccount] = useState(false);
+  const [notificationsEnabled, setNotificationsEnabled] = useState(false);
+  const [importRecords, setImportRecords] = useState<Array<{ accountName: string; provider: string; daysSince: number }>>([]);
   const initials = user?.name
     ?.split(" ")
     .map((n) => n[0])
     .join("")
     .toUpperCase() || "?";
+
+  // Check notification permissions and load import history
+  useEffect(() => {
+    const checkNotifications = async () => {
+      const enabled = await areNotificationsEnabled();
+      setNotificationsEnabled(enabled);
+    };
+    
+    const loadImportHistory = async () => {
+      const records = await getLastImportDates();
+      setImportRecords(records.map(r => ({
+        accountName: r.accountName,
+        provider: r.provider,
+        daysSince: daysSinceImport(r.lastImportDate),
+      })));
+    };
+    
+    checkNotifications();
+    loadImportHistory();
+  }, []);
+
+  const handleToggleNotifications = async (value: boolean) => {
+    if (value) {
+      const granted = await requestNotificationPermissions();
+      if (granted) {
+        setNotificationsEnabled(true);
+        // Schedule default notifications
+        await scheduleWeeklyImportReminder();
+        await scheduleDailyBudgetCheck();
+        Alert.alert("Notifications Enabled", "You'll receive reminders for imports and budget alerts.");
+      } else {
+        Alert.alert(
+          "Permission Required",
+          "Please enable notifications in your device settings to receive reminders.",
+          [{ text: "OK" }]
+        );
+      }
+    } else {
+      await cancelAllNotifications();
+      setNotificationsEnabled(false);
+      Alert.alert("Notifications Disabled", "You won't receive any notifications from this app.");
+    }
+  };
+
+  const handleClearNotifications = async () => {
+    Alert.alert(
+      "Clear All Notifications",
+      "This will remove all in-app notifications. Are you sure?",
+      [
+        { text: "Cancel", style: "cancel" },
+        {
+          text: "Clear",
+          style: "destructive",
+          onPress: async () => {
+            await clearNotifications();
+            Alert.alert("Done", "All notifications cleared.");
+          },
+        },
+      ]
+    );
+  };
 
   const handleLogout = async () => {
     setLoading(true);
@@ -236,6 +311,103 @@ export default function ProfileScreen() {
             </Text>
           </View>
         </View>
+
+        {/* Notification Settings */}
+        <View className="mb-8 rounded-2xl bg-gray-50 p-4">
+          <View className="flex-row items-center gap-2 mb-4">
+            <Feather name="bell" size={18} color="#374151" />
+            <Text className="text-base font-bold text-dark-100">Notifications</Text>
+            {unreadCount > 0 && (
+              <Pressable 
+                onPress={openTray}
+                className="bg-red-500 rounded-full px-2 py-0.5"
+              >
+                <Text className="text-xs font-bold text-white">{unreadCount} new</Text>
+              </Pressable>
+            )}
+          </View>
+          
+          {/* Push Notifications Toggle */}
+          <View className="flex-row items-center justify-between py-3 border-b border-gray-200">
+            <View className="flex-1">
+              <Text className="text-sm font-semibold text-dark-100">Push Notifications</Text>
+              <Text className="text-xs text-gray-500">Budget alerts & import reminders</Text>
+            </View>
+            <Switch
+              value={notificationsEnabled}
+              onValueChange={handleToggleNotifications}
+              trackColor={{ false: '#D1D5DB', true: '#7C3AED' }}
+              thumbColor={notificationsEnabled ? '#fff' : '#f4f3f4'}
+            />
+          </View>
+
+          {/* View Notifications */}
+          <Pressable 
+            onPress={openTray}
+            className="flex-row items-center justify-between py-3 border-b border-gray-200"
+          >
+            <View className="flex-row items-center gap-2">
+              <Feather name="inbox" size={16} color="#6B7280" />
+              <Text className="text-sm text-gray-700">View Notifications</Text>
+            </View>
+            <View className="flex-row items-center gap-1">
+              {unreadCount > 0 && (
+                <View className="bg-indigo-100 rounded-full px-2 py-0.5 mr-1">
+                  <Text className="text-xs font-semibold text-indigo-700">{unreadCount}</Text>
+                </View>
+              )}
+              <Feather name="chevron-right" size={16} color="#9CA3AF" />
+            </View>
+          </Pressable>
+
+          {/* Clear Notifications */}
+          <Pressable 
+            onPress={handleClearNotifications}
+            className="flex-row items-center justify-between py-3"
+          >
+            <View className="flex-row items-center gap-2">
+              <Feather name="trash" size={16} color="#6B7280" />
+              <Text className="text-sm text-gray-700">Clear All Notifications</Text>
+            </View>
+            <Feather name="chevron-right" size={16} color="#9CA3AF" />
+          </Pressable>
+        </View>
+
+        {/* Import History */}
+        {importRecords.length > 0 && (
+          <View className="mb-8 rounded-2xl bg-gray-50 p-4">
+            <View className="flex-row items-center gap-2 mb-4">
+              <Feather name="download" size={18} color="#374151" />
+              <Text className="text-base font-bold text-dark-100">Import History</Text>
+            </View>
+            {importRecords.map((record, index) => (
+              <View 
+                key={`${record.provider}-${index}`}
+                className={`flex-row items-center justify-between py-3 ${
+                  index < importRecords.length - 1 ? 'border-b border-gray-200' : ''
+                }`}
+              >
+                <View>
+                  <Text className="text-sm font-semibold text-dark-100">{record.accountName}</Text>
+                  <Text className="text-xs text-gray-500">{record.provider.toUpperCase()}</Text>
+                </View>
+                <View className="items-end">
+                  <Text className={`text-sm font-semibold ${
+                    record.daysSince >= 14 ? 'text-red-500' : 
+                    record.daysSince >= 7 ? 'text-amber-500' : 'text-green-600'
+                  }`}>
+                    {record.daysSince === 0 ? 'Today' : 
+                     record.daysSince === 1 ? 'Yesterday' : 
+                     `${record.daysSince} days ago`}
+                  </Text>
+                  {record.daysSince >= 14 && (
+                    <Text className="text-xs text-red-400">Needs update</Text>
+                  )}
+                </View>
+              </View>
+            ))}
+          </View>
+        )}
 
         {/* Action Buttons */}
         <View className="mt-auto mb-4">

@@ -1,5 +1,6 @@
 import { getDeleteStatus } from "@/lib/deleteQueue";
 import { getPendingTransactionCount, getSyncStatus, SyncStatus } from "@/lib/syncQueue";
+import { useNotificationStore } from "@/store/useNotificationStore";
 import { useSessionStore } from "@/store/useSessionStore";
 import { Feather } from "@expo/vector-icons";
 import { router } from "expo-router";
@@ -18,6 +19,7 @@ export default function Header({
   noPaddingBottom?: boolean;
 }) {
   const { user } = useSessionStore();
+  const { unreadCount, openTray } = useNotificationStore();
   const [showNotifications, setShowNotifications] = useState(false);
   const [syncStatus, setSyncStatus] = useState<SyncStatus | null>(null);
   const [pendingCount, setPendingCount] = useState(0);
@@ -77,6 +79,7 @@ export default function Header({
   const hasPendingSync = syncStatus?.isSyncing || pendingCount > 0 || (deleteStatus && deleteStatus.status !== 'completed');
   const hasSyncActivity = syncStatus?.isSyncing || pendingCount > 0; // exclude delete-only from showing sync item
   const isActiveOperation = syncStatus?.isSyncing || deleteStatus?.status === 'in-progress';
+  const hasNotifications = unreadCount > 0 || hasPendingSync;
 
   return (
     <>
@@ -86,8 +89,9 @@ export default function Header({
           <Text className="text-2xl font-bold text-dark-100">{displayTitle}</Text>
         </View>
         <View className="flex-row items-center gap-3">
+          {/* Notification Bell - opens notification tray */}
           <Pressable 
-            onPress={() => setShowNotifications(!showNotifications)}
+            onPress={openTray}
             className="h-10 w-10 items-center justify-center rounded-full bg-white shadow-sm relative"
           >
             {isActiveOperation ? (
@@ -97,12 +101,35 @@ export default function Header({
             ) : (
               <>
                 <Feather name="bell" size={18} color="#181C2E" />
-                {hasPendingSync && (
-                  <View className="absolute top-1 right-1 h-2.5 w-2.5 rounded-full bg-blue-500 border border-white" />
+                {hasNotifications && (
+                  <View className="absolute -top-0.5 -right-0.5 h-5 w-5 items-center justify-center rounded-full bg-red-500 border-2 border-white">
+                    <Text className="text-[10px] font-bold text-white">
+                      {unreadCount > 9 ? '9+' : unreadCount > 0 ? unreadCount : ''}
+                    </Text>
+                  </View>
                 )}
               </>
             )}
           </Pressable>
+          
+          {/* Sync Status Button - shows sync dropdown */}
+          {hasPendingSync && (
+            <Pressable 
+              onPress={() => setShowNotifications(!showNotifications)}
+              className="h-10 w-10 items-center justify-center rounded-full bg-white shadow-sm relative"
+            >
+              {isActiveOperation ? (
+                <Animated.View style={{ transform: [{ rotate: spin }] }}>
+                  <Feather name="upload-cloud" size={18} color="#3B82F6" />
+                </Animated.View>
+              ) : (
+                <>
+                  <Feather name="cloud" size={18} color="#181C2E" />
+                  <View className="absolute top-1 right-1 h-2.5 w-2.5 rounded-full bg-blue-500 border border-white" />
+                </>
+              )}
+            </Pressable>
+          )}
           <Pressable onPress={() => router.push("/profile")}>
             <View className="h-10 w-10 items-center justify-center rounded-full bg-primary">
               <Text className="text-xs font-bold text-white">{initials}</Text>

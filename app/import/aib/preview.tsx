@@ -2,6 +2,7 @@ import { saveBalanceSnapshot, updateAccountBalance, upsertBalanceRemote } from "
 import { getAllTransactionsForUser, updateTransaction } from "@/lib/appwrite";
 import { getTransferCategoryId } from "@/lib/categorization";
 import { detectAibTransfers, detectCrossBankTransfers } from "@/lib/csvParser";
+import { saveLastImportDate } from "@/lib/notifications";
 import { getQueuedTransactions, queueTransactionsForSync, updateQueuedTransactions } from "@/lib/syncQueue";
 import { useHomeStore } from "@/store/useHomeStore";
 import { useSessionStore } from "@/store/useSessionStore";
@@ -468,6 +469,16 @@ export default function ImportPreviewScreen() {
       const step13Start = Date.now();
       await fetchHome();
       console.log(`Step 13 complete: Fetched home in ${Date.now() - step13Start}ms`);
+      
+      // Track last import date for notifications
+      console.log('Step 14: Tracking import date for notifications...');
+      const accountKeyToTrack = selectedAccountKey || `aib-${(selectedAccountName || newAccountName).toLowerCase().replace(/\s+/g, '-')}`;
+      await saveLastImportDate(
+        accountKeyToTrack,
+        selectedAccountName || newAccountName,
+        'aib'
+      );
+      console.log(`Step 14 complete: Import date tracked for ${accountKeyToTrack}`);
       
       console.log(`=== Total import time: ${Date.now() - startTotal}ms ===`);
       clearParsedTransactions();

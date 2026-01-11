@@ -1,4 +1,6 @@
+import { NotificationTray } from "@/components/NotificationTray";
 import { useAutoSync } from "@/hooks/useAutoSync";
+import { useNotificationResponse, useNotifications } from "@/hooks/useNotifications";
 import { detectCSVProvider } from "@/lib/csvDetector";
 import { addBreadcrumb, captureException, captureMessage, ErrorBoundary, initSentry } from "@/lib/sentry";
 import { useSessionStore } from "@/store/useSessionStore";
@@ -68,6 +70,10 @@ export default function RootLayout() {
 
   // Enable auto-sync
   useAutoSync();
+
+  // Enable notifications
+  useNotifications();
+  useNotificationResponse();
 
   // Handle deep links for password reset and CSV file imports
   useEffect(() => {
@@ -352,6 +358,7 @@ export default function RootLayout() {
     <ErrorBoundary fallback={ErrorFallback}>
       <GestureHandlerRootView style={{ flex: 1 }}>
         <Stack screenOptions={{ headerShown: false }} />
+        <NotificationTray />
       </GestureHandlerRootView>
     </ErrorBoundary>
   );
