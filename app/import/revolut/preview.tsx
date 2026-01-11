@@ -2,6 +2,7 @@ import { saveBalanceSnapshot } from "@/lib/accountBalances";
 import { getAllTransactionsForUser, updateTransaction } from "@/lib/appwrite";
 import { getTransferCategoryId } from "@/lib/categorization";
 import { detectCrossBankTransfers, detectTransferPairs } from "@/lib/csvParser";
+import { saveLastImportDate } from "@/lib/notifications";
 import { queueTransactionsForSync } from "@/lib/syncQueue";
 import { useHomeStore } from "@/store/useHomeStore";
 import { useSessionStore } from "@/store/useSessionStore";
@@ -363,6 +364,19 @@ export default function ImportPreviewScreen() {
       }
 
       setImportProgress({ current: finalTransactions.length, total: finalTransactions.length });
+
+      // Track last import date for notifications
+      // Get unique account names from the imported transactions
+      const accountNames = new Set(finalTransactions.map(tx => tx.account).filter(Boolean));
+      for (const accountName of accountNames) {
+        const accountKey = `revolut-${accountName?.toLowerCase().replace(/\s+/g, '-')}`;
+        await saveLastImportDate(accountKey, accountName || 'Revolut', 'revolut');
+      }
+      // If no specific accounts, track general revolut import
+      if (accountNames.size === 0) {
+        await saveLastImportDate('revolut-main', 'Revolut', 'revolut');
+      }
+      console.log(`Import date tracked for Revolut accounts: ${Array.from(accountNames).join(', ') || 'main'}`);
 
       Alert.alert(
         "Import Queued",

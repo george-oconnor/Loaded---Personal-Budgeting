@@ -1,5 +1,6 @@
 import AccountBalanceCard from "@/components/AccountBalanceCard";
 import Header from "@/components/Header";
+import { ImportReminderBanner } from "@/components/ImportReminderBanner";
 import IncomeExpenseRow from "@/components/IncomeExpenseRow";
 import LoadingSplash from "@/components/LoadingSplash";
 import QuickActions from "@/components/QuickActions";
@@ -75,6 +76,10 @@ export default function Index() {
         }
       >
         <Header name={user?.name} />
+        
+        {/* Import Reminder Banner - shows when accounts haven't been updated in 2+ weeks */}
+        {hasTransactions && <ImportReminderBanner />}
+        
         <RemainingSpendCard 
           summary={summary} 
           transactions={transactions} 
