@@ -70,7 +70,7 @@ export default function SpendingOverTimeChart({
     const cycleExpenses = transactions
       .filter((t) => {
         const d = new Date(t.date);
-        return t.kind === "expense" && d >= cycleStart && d <= now;
+        return t.kind === "expense" && !t.excludeFromAnalytics && d >= cycleStart && d <= now;
       })
       .sort((a, b) => new Date(a.date).getTime() - new Date(b.date).getTime());
 
@@ -78,7 +78,7 @@ export default function SpendingOverTimeChart({
     const prevCycleExpenses = transactions
       .filter((t) => {
         const d = new Date(t.date);
-        return t.kind === "expense" && d >= prevCycleStart && d <= prevCycleEnd;
+        return t.kind === "expense" && !t.excludeFromAnalytics && d >= prevCycleStart && d <= prevCycleEnd;
       })
       .sort((a, b) => new Date(a.date).getTime() - new Date(b.date).getTime());
 
