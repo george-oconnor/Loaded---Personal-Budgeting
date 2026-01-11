@@ -66,22 +66,9 @@ export default function SpendAnalytics() {
   const budget = summary?.monthlyBudget ?? 0;
   const currency = summary?.currency ?? "USD";
 
-  const transferCategoryIds = useMemo(
-    () =>
-      categories
-        .filter((cat) => cat.name?.toLowerCase().includes("transfer"))
-        .map((cat) => cat.id),
-    [categories]
-  );
-
   const analyticsTransactions = useMemo(
-    () =>
-      transactions.filter(
-        (t) =>
-          !t.excludeFromAnalytics &&
-          !transferCategoryIds.includes(t.categoryId)
-      ),
-    [transactions, transferCategoryIds]
+    () => transactions.filter((t) => !t.excludeFromAnalytics),
+    [transactions]
   );
 
   // Animate dropdown open/close
@@ -154,7 +141,7 @@ export default function SpendAnalytics() {
     );
     
     const categorizedStats = categories
-      .filter((cat) => cat.id !== "all" && !transferCategoryIds.includes(cat.id))
+      .filter((cat) => cat.id !== "all")
       .map((category) => {
         const catTransactions = cycleTransactions.filter(
           (t) => t.categoryId === category.id && t.kind === "expense"
@@ -196,7 +183,7 @@ export default function SpendAnalytics() {
       ...cat,
       percentage: totalExpenses > 0 ? (cat.totalSpent / totalExpenses) * 100 : 0,
     }));
-  }, [categories, analyticsTransactions, cycleType, cycleDay, transferCategoryIds]);
+  }, [categories, analyticsTransactions, cycleType, cycleDay]);
 
   // Group transactions by day
   const dailyTransactions = useMemo(() => {
