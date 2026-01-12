@@ -1,4 +1,4 @@
-import { getCycleStartDate } from "@/lib/budgetCycle";
+import { getCycleStartDate, getNextCycleStartDate, getPreviousCycleStartDate } from "@/lib/budgetCycle";
 import type { Transaction } from "@/types/type";
 import * as Haptics from "expo-haptics";
 import { useMemo, useRef, useState } from "react";
@@ -34,6 +34,11 @@ export default function SpendingOverTimeChart({
   const [lastVibrationDate, setLastVibrationDate] = useState<string | null>(null);
   const svgRef = useRef(null);
 
+  // Helper to extract date string consistently
+  const getDateKey = (date: Date) => {
+    return `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, '0')}-${String(date.getDate()).padStart(2, '0')}`;
+  };
+
   const updateSelectedDateFromX = (touchX: number) => {
     if (chartData.points.length === 0) return;
 
@@ -56,13 +61,14 @@ export default function SpendingOverTimeChart({
   const chartData = useMemo(() => {
     const cycleStart = getCycleStartDate(cycleType, cycleDay);
     const now = new Date();
+    now.setHours(23, 59, 59, 999); // End of today to include all transactions today
     
-    // Calculate end of budget cycle (end of current month)
-    const cycleEnd = new Date(now.getFullYear(), now.getMonth() + 1, 0);
+    // Use getNextCycleStartDate to get actual cycle end
+    const cycleEnd = getNextCycleStartDate(cycleType, cycleDay);
+    cycleEnd.setDate(cycleEnd.getDate() - 1); // Day before next cycle starts
 
-    // Calculate previous cycle dates
-    const prevCycleStart = new Date(cycleStart);
-    prevCycleStart.setMonth(prevCycleStart.getMonth() - 1);
+    // Calculate previous cycle dates using the correct function
+    const prevCycleStart = getPreviousCycleStartDate(cycleType, cycleDay);
     const prevCycleEnd = new Date(cycleStart);
     prevCycleEnd.setDate(prevCycleEnd.getDate() - 1);
 
@@ -88,7 +94,7 @@ export default function SpendingOverTimeChart({
 
     cycleExpenses.forEach((t) => {
       const date = new Date(t.date);
-      const dateKey = date.toISOString().split("T")[0];
+      const dateKey = getDateKey(date);
       if (!dailySpending[dateKey]) {
         dailySpending[dateKey] = 0;
       }
@@ -101,7 +107,7 @@ export default function SpendingOverTimeChart({
 
     prevCycleExpenses.forEach((t) => {
       const date = new Date(t.date);
-      const dateKey = date.toISOString().split("T")[0];
+      const dateKey = getDateKey(date);
       if (!prevDailySpending[dateKey]) {
         prevDailySpending[dateKey] = 0;
       }
@@ -115,9 +121,15 @@ export default function SpendingOverTimeChart({
     const currentDate = new Date(cycleStart);
     let axisEndIndex = 0;
     const cycleDayCount = Math.floor((prevCycleEnd.getTime() - prevCycleStart.getTime()) / (1000 * 60 * 60 * 24)) + 1;
+    
+    // Calculate the total length of current cycle for normalization
+    const currentCycleDays = Math.floor((cycleEnd.getTime() - cycleStart.getTime()) / (1000 * 60 * 60 * 24)) + 1;
+
+    // Track which previous cycle days we've already accumulated to avoid double-counting
+    const prevDaysAccumulated = new Set<string>();
 
     while (currentDate <= cycleEnd) {
-      const dateKey = currentDate.toISOString().split("T")[0];
+      const dateKey = getDateKey(currentDate);
       days.push(dateKey);
       
       // Only accumulate spending up to today
@@ -132,15 +144,22 @@ export default function SpendingOverTimeChart({
         cumulativeAmounts.push(cumulative);
       }
       
-      // Get equivalent date from previous cycle
+      // Get equivalent date from previous cycle based on percentage through cycle
       const dayOffsetFromCycleStart = Math.floor((currentDate.getTime() - cycleStart.getTime()) / (1000 * 60 * 60 * 24));
-      if (dayOffsetFromCycleStart < cycleDayCount) {
+      const percentThroughCycle = dayOffsetFromCycleStart / currentCycleDays;
+      const prevCycleDayOffset = Math.floor(percentThroughCycle * cycleDayCount);
+      
+      if (prevCycleDayOffset < cycleDayCount) {
         const prevCycleDate = new Date(prevCycleStart);
-        prevCycleDate.setDate(prevCycleDate.getDate() + dayOffsetFromCycleStart);
-        const prevDateKey = prevCycleDate.toISOString().split("T")[0];
+        prevCycleDate.setDate(prevCycleDate.getDate() + prevCycleDayOffset);
+        const prevDateKey = getDateKey(prevCycleDate);
         
-        if (prevDailySpending[prevDateKey]) {
-          prevCumulative += prevDailySpending[prevDateKey];
+        // Only add this day's spending if we haven't already accumulated it
+        if (!prevDaysAccumulated.has(prevDateKey)) {
+          if (prevDailySpending[prevDateKey]) {
+            prevCumulative += prevDailySpending[prevDateKey];
+          }
+          prevDaysAccumulated.add(prevDateKey);
         }
         prevCumulativeAmounts.push(prevCumulative);
       } else {
@@ -159,7 +178,7 @@ export default function SpendingOverTimeChart({
       return { x, y, amount: cumulativeAmounts[index], date: day };
     });
 
-    // Generate previous cycle points - show entire previous cycle
+    // Generate previous cycle points - show entire normalized previous cycle
     const prevPoints = days.map((day, index) => {
       const x = (index / Math.max(days.length - 1, 1)) * chartWidth;
       const y = chartInnerHeight - (prevCumulativeAmounts[index] / (maxAmount || 1)) * chartInnerHeight;
@@ -208,9 +227,9 @@ export default function SpendingOverTimeChart({
     const value = amount / 100;
     const currencySymbol = currency === "USD" ? "$" : currency === "EUR" ? "€" : currency === "GBP" ? "£" : "";
     if (value >= 1000) {
-      return `${currencySymbol}${(value / 1000).toFixed(1)}k`;
+      return `${currencySymbol}${Math.round(value).toLocaleString()}`;
     }
-    return `${currencySymbol}${value.toFixed(0)}`;
+    return `${currencySymbol}${Math.round(value)}`;
   };
 
   // Handle chart tap
@@ -376,14 +395,42 @@ export default function SpendingOverTimeChart({
                 const isNegativeDiff = diff < 0;
                 const diffColor = isZeroDiff ? '#F59E0B' : isNegativeDiff ? '#10B981' : '#EF4444';
                 
-                // Calculate previous cycle equivalent date
+                // Calculate previous cycle equivalent date using percentage normalization
                 const cycleStart = getCycleStartDate(cycleType, cycleDay);
+                const now = new Date();
+                now.setHours(23, 59, 59, 999);
+                const cycleEnd = getNextCycleStartDate(cycleType, cycleDay);
+                cycleEnd.setDate(cycleEnd.getDate() - 1);
                 const selectedDate = new Date(selectedPoint.date);
                 const dayOffset = Math.floor((selectedDate.getTime() - cycleStart.getTime()) / (1000 * 60 * 60 * 24));
-                const prevCycleStart = new Date(cycleStart);
-                prevCycleStart.setMonth(prevCycleStart.getMonth() - 1);
+                const currentCycleDays = Math.floor((cycleEnd.getTime() - cycleStart.getTime()) / (1000 * 60 * 60 * 24)) + 1;
+                const percentThroughCycle = dayOffset / currentCycleDays;
+                
+                const prevCycleStart = getPreviousCycleStartDate(cycleType, cycleDay);
+                const prevCycleEnd = new Date(cycleStart);
+                prevCycleEnd.setDate(prevCycleEnd.getDate() - 1);
+                const prevCycleDays = Math.floor((prevCycleEnd.getTime() - prevCycleStart.getTime()) / (1000 * 60 * 60 * 24)) + 1;
+                const prevCycleDayOffset = Math.floor(percentThroughCycle * prevCycleDays);
+                
                 const prevEquivalentDate = new Date(prevCycleStart);
-                prevEquivalentDate.setDate(prevEquivalentDate.getDate() + dayOffset);
+                prevEquivalentDate.setDate(prevEquivalentDate.getDate() + prevCycleDayOffset);
+                
+                console.log('=== CHART POPOVER CALCULATION ===');
+                console.log('Selected date:', selectedPoint.date);
+                console.log('Current cycle start:', cycleStart.toISOString());
+                console.log('Current cycle end:', cycleEnd.toISOString());
+                console.log('Day offset:', dayOffset);
+                console.log('Current cycle days:', currentCycleDays);
+                console.log('Percent through cycle:', percentThroughCycle);
+                console.log('Current amount:', selectedPoint.amount / 100);
+                console.log('Previous cycle start:', prevCycleStart.toISOString());
+                console.log('Previous cycle end:', prevCycleEnd.toISOString());
+                console.log('Previous cycle days:', prevCycleDays);
+                console.log('Previous cycle day offset:', prevCycleDayOffset);
+                console.log('Previous equivalent date:', prevEquivalentDate.toISOString());
+                console.log('Previous amount:', prevAmount / 100);
+                console.log('Difference:', diff / 100);
+                console.log('=== END CHART POPOVER CALCULATION ===');
                 
                 return (
                   <>
@@ -466,9 +513,8 @@ export default function SpendingOverTimeChart({
                     <SvgText
                       x={popoverX + popoverWidth - 8}
                       y={popoverY + 42}
-                      fontSize="11"
-                      fill="#111827"
-                      fontWeight="600"
+                      fontSize="10"
+                      fill="#6B7280"
                       textAnchor="end"
                     >
                       {formatAmount(selectedPoint.amount)}

@@ -1,6 +1,6 @@
 import RemainingSpendCard from "@/components/RemainingSpendCard";
 import SpendingOverTimeChart from "@/components/SpendingOverTimeChart";
-import { getCycleBudgetStats, getCycleStartDate, getDaysRemainingInCycle, getTransactionsInCurrentCycle } from "@/lib/budgetCycle";
+import { getCycleBudgetStats, getCycleStartDate, getDaysRemainingInCycle, getNextCycleStartDate, getPreviousCycleStartDate, getTransactionsInCurrentCycle } from "@/lib/budgetCycle";
 import { formatCurrency } from "@/lib/currencyFunctions";
 import { useHomeStore } from "@/store/useHomeStore";
 import { Feather } from "@expo/vector-icons";
@@ -66,6 +66,11 @@ export default function SpendAnalytics() {
   const budget = summary?.monthlyBudget ?? 0;
   const currency = summary?.currency ?? "USD";
 
+  // Helper to extract date string consistently
+  const getDateKey = (date: Date) => {
+    return `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, '0')}-${String(date.getDate()).padStart(2, '0')}`;
+  };
+
   const analyticsTransactions = useMemo(
     () => transactions.filter((t) => !t.excludeFromAnalytics),
     [transactions]
@@ -95,19 +100,68 @@ export default function SpendAnalytics() {
   // Calculate total spent in current cycle
   const totalSpentThisCycle = cycleExpenses;
 
+  // Calculate spending up to today for comparison
+  const spentUpToToday = useMemo(() => {
+    const endOfToday = new Date();
+    endOfToday.setHours(23, 59, 59, 999);
+    const currentCycleStart = getCycleStartDate(cycleType, cycleDay);
+    
+    const todayTransactions = analyticsTransactions.filter((t) => {
+      const txDate = new Date(t.date);
+      return (
+        t.kind === "expense" &&
+        txDate >= currentCycleStart &&
+        txDate <= endOfToday
+      );
+    });
+    
+    return todayTransactions.reduce((sum, t) => sum + Math.abs(t.amount), 0);
+  }, [analyticsTransactions, cycleType, cycleDay]);
+
   // Calculate spending comparison with last month (same day)
   const spendingComparison = useMemo(() => {
+    // Normalize to start of day for day counting
     const now = new Date();
+    now.setHours(0, 0, 0, 0);
     const currentCycleStart = getCycleStartDate(cycleType, cycleDay);
-    const daysIntoCycle = Math.floor((now.getTime() - currentCycleStart.getTime()) / (1000 * 60 * 60 * 24));
-
-    // Calculate last month's cycle start
-    const lastMonthCycleStart = new Date(currentCycleStart);
-    lastMonthCycleStart.setMonth(lastMonthCycleStart.getMonth() - 1);
     
-    // Calculate the equivalent day last month
+    // IMPORTANT: Use getNextCycleStartDate to get actual cycle end, not end of month
+    const currentCycleEnd = getNextCycleStartDate(cycleType, cycleDay);
+    currentCycleEnd.setDate(currentCycleEnd.getDate() - 1); // Day before next cycle starts
+    
+    const daysIntoCycle = Math.floor((now.getTime() - currentCycleStart.getTime()) / (1000 * 60 * 60 * 24));
+    const currentCycleDays = Math.floor((currentCycleEnd.getTime() - currentCycleStart.getTime()) / (1000 * 60 * 60 * 24)) + 1;
+    const percentThroughCycle = daysIntoCycle / currentCycleDays;
+
+    console.log('=== ANALYTICS CALCULATION ===');
+    console.log('Current cycle start:', currentCycleStart.toISOString());
+    console.log('Current cycle end:', currentCycleEnd.toISOString());
+    console.log('Days into cycle:', daysIntoCycle);
+    console.log('Current cycle days:', currentCycleDays);
+    console.log('Percent through cycle:', percentThroughCycle);
+
+    // Use the already calculated spending up to today
+    const currentSpent = spentUpToToday;
+    console.log('Current spent (spentUpToToday):', currentSpent / 100);
+
+    // Get the actual previous cycle start date
+    const lastMonthCycleStart = getPreviousCycleStartDate(cycleType, cycleDay);
+    const lastMonthCycleEnd = new Date(currentCycleStart);
+    lastMonthCycleEnd.setDate(lastMonthCycleEnd.getDate() - 1);
+    const prevCycleDays = Math.floor((lastMonthCycleEnd.getTime() - lastMonthCycleStart.getTime()) / (1000 * 60 * 60 * 24)) + 1;
+    
+    console.log('Previous cycle start:', lastMonthCycleStart.toISOString());
+    console.log('Previous cycle end:', lastMonthCycleEnd.toISOString());
+    console.log('Previous cycle days:', prevCycleDays);
+    
+    // Calculate the equivalent day using percentage normalization
+    const prevCycleDayOffset = Math.floor(percentThroughCycle * prevCycleDays);
     const lastMonthEquivalentDay = new Date(lastMonthCycleStart);
-    lastMonthEquivalentDay.setDate(lastMonthEquivalentDay.getDate() + daysIntoCycle);
+    lastMonthEquivalentDay.setDate(lastMonthEquivalentDay.getDate() + prevCycleDayOffset);
+    lastMonthEquivalentDay.setHours(23, 59, 59, 999);
+
+    console.log('Previous cycle day offset:', prevCycleDayOffset);
+    console.log('Equivalent day in previous cycle:', lastMonthEquivalentDay.toISOString());
 
     // Get transactions from last month's cycle up to the equivalent day
     const lastMonthTransactions = analyticsTransactions.filter((t) => {
@@ -119,9 +173,17 @@ export default function SpendAnalytics() {
       );
     });
 
+    console.log('Previous cycle transaction count:', lastMonthTransactions.length);
+
     const lastMonthSpent = lastMonthTransactions.reduce((sum, t) => sum + Math.abs(t.amount), 0);
-    const difference = totalSpentThisCycle - lastMonthSpent;
+    console.log('Previous cycle spent:', lastMonthSpent / 100);
+    
+    const difference = currentSpent - lastMonthSpent;
+    console.log('Difference (current - previous):', difference / 100);
+    
     const percentageChange = lastMonthSpent > 0 ? ((difference / lastMonthSpent) * 100) : 0;
+    
+    console.log('=== END ANALYTICS CALCULATION ===');
 
     return {
       difference,
@@ -129,7 +191,7 @@ export default function SpendAnalytics() {
       isHigher: difference > 0,
       lastMonthSpent,
     };
-  }, [analyticsTransactions, cycleType, cycleDay, totalSpentThisCycle]);
+  }, [analyticsTransactions, cycleType, cycleDay, spentUpToToday]);
 
   // Calculate category spending stats
   const categoryStats = useMemo(() => {
@@ -193,7 +255,7 @@ export default function SpendAnalytics() {
       .filter(t => t.kind === "expense")
       .forEach((t) => {
         const date = new Date(t.date);
-        const dateKey = date.toISOString().split('T')[0]; // YYYY-MM-DD
+        const dateKey = getDateKey(date);
         
         if (!grouped.has(dateKey)) {
           grouped.set(dateKey, []);
@@ -257,7 +319,7 @@ export default function SpendAnalytics() {
               })()
             }}
           >
-            {formatCurrency(totalSpentThisCycle / 100, currency)}
+            {formatCurrency(spentUpToToday / 100, currency)}
           </Text>
           <View className="flex-row items-center">
             <Feather 

@@ -2,7 +2,7 @@
   "expo": {
     "name": "Loaded",
     "slug": "budget-app",
-    "version": "1.0.1",
+    "version": "1.0.2",
     "orientation": "portrait",
     "icon": "./assets/images/icon.png",
     "scheme": "budgetapp",
@@ -11,7 +11,7 @@
     "description": "Loaded - Smart personal finance tracker. Track spending, set budgets, and gain insights into your money.",
     "ios": {
       "displayName": "Loaded",
-      "buildNumber": "9",
+      "buildNumber": "1",
       "supportsTablet": true,
       "bundleIdentifier": "com.georgeoc.budgetapp",
       "infoPlist": {

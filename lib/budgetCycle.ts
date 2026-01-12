@@ -8,6 +8,7 @@ export function getCycleStartDate(
   cycleDay?: number
 ): Date {
   const now = new Date();
+  now.setHours(0, 0, 0, 0); // Normalize to start of day
   const year = now.getFullYear();
   const month = now.getMonth();
 
@@ -16,16 +17,16 @@ export function getCycleStartDate(
   switch (cycleType) {
     case "first_working_day": {
       // Start from first working day of current month
-      cycleStart = new Date(Date.UTC(year, month, 1, 0, 0, 0));
+      cycleStart = new Date(year, month, 1, 0, 0, 0);
       // Move to first working day (skip weekends)
-      while (cycleStart.getUTCDay() === 0 || cycleStart.getUTCDay() === 6) {
-        cycleStart.setUTCDate(cycleStart.getUTCDate() + 1);
+      while (cycleStart.getDay() === 0 || cycleStart.getDay() === 6) {
+        cycleStart.setDate(cycleStart.getDate() + 1);
       }
       // If we haven't reached the first working day yet, use previous month's first working day
       if (cycleStart > now) {
-        cycleStart = new Date(Date.UTC(year, month - 1, 1, 0, 0, 0));
-        while (cycleStart.getUTCDay() === 0 || cycleStart.getUTCDay() === 6) {
-          cycleStart.setUTCDate(cycleStart.getUTCDate() + 1);
+        cycleStart = new Date(year, month - 1, 1, 0, 0, 0);
+        while (cycleStart.getDay() === 0 || cycleStart.getDay() === 6) {
+          cycleStart.setDate(cycleStart.getDate() + 1);
         }
       }
       break;
@@ -33,15 +34,15 @@ export function getCycleStartDate(
 
     case "last_working_day": {
       // Find the last working day of the previous month
-      cycleStart = new Date(Date.UTC(year, month, 0, 0, 0, 0)); // Last day of previous month
-      while (cycleStart.getUTCDay() === 0 || cycleStart.getUTCDay() === 6) {
-        cycleStart.setUTCDate(cycleStart.getUTCDate() - 1);
+      cycleStart = new Date(year, month, 0, 0, 0, 0); // Last day of previous month
+      while (cycleStart.getDay() === 0 || cycleStart.getDay() === 6) {
+        cycleStart.setDate(cycleStart.getDate() - 1);
       }
       
       // If we haven't passed this date yet this cycle, use the month before
-      const currentMonthLastWorking = new Date(Date.UTC(year, month + 1, 0, 0, 0, 0));
-      while (currentMonthLastWorking.getUTCDay() === 0 || currentMonthLastWorking.getUTCDay() === 6) {
-        currentMonthLastWorking.setUTCDate(currentMonthLastWorking.getUTCDate() - 1);
+      const currentMonthLastWorking = new Date(year, month + 1, 0, 0, 0, 0);
+      while (currentMonthLastWorking.getDay() === 0 || currentMonthLastWorking.getDay() === 6) {
+        currentMonthLastWorking.setDate(currentMonthLastWorking.getDate() - 1);
       }
       
       if (now >= currentMonthLastWorking) {
@@ -53,31 +54,31 @@ export function getCycleStartDate(
     case "specific_date": {
       const cycleDay_ = cycleDay ?? 1;
       // Start from the cycle day of current month
-      cycleStart = new Date(Date.UTC(year, month, cycleDay_, 0, 0, 0));
+      cycleStart = new Date(year, month, cycleDay_, 0, 0, 0);
       
       // If we haven't reached this day yet, use previous month
       if (cycleStart > now) {
-        cycleStart = new Date(Date.UTC(year, month - 1, cycleDay_, 0, 0, 0));
+        cycleStart = new Date(year, month - 1, cycleDay_, 0, 0, 0);
       }
       break;
     }
 
     case "last_friday": {
       // Find the last Friday of the current month
-      const lastDayOfMonth = new Date(Date.UTC(year, month + 1, 0));
+      const lastDayOfMonth = new Date(year, month + 1, 0, 0, 0, 0);
       let lastFriday = new Date(lastDayOfMonth);
       
       // Go back to last Friday (5 = Friday)
-      while (lastFriday.getUTCDay() !== 5) {
-        lastFriday.setUTCDate(lastFriday.getUTCDate() - 1);
+      while (lastFriday.getDay() !== 5) {
+        lastFriday.setDate(lastFriday.getDate() - 1);
       }
       
       // If we haven't reached the last Friday of current month yet, use previous month's last Friday
       if (lastFriday > now) {
-        const prevMonthLastDay = new Date(Date.UTC(year, month, 0));
+        const prevMonthLastDay = new Date(year, month, 0, 0, 0, 0);
         cycleStart = new Date(prevMonthLastDay);
-        while (cycleStart.getUTCDay() !== 5) {
-          cycleStart.setUTCDate(cycleStart.getUTCDate() - 1);
+        while (cycleStart.getDay() !== 5) {
+          cycleStart.setDate(cycleStart.getDate() - 1);
         }
       } else {
         cycleStart = lastFriday;
@@ -86,17 +87,74 @@ export function getCycleStartDate(
     }
 
     default:
-      cycleStart = new Date(Date.UTC(year, month, 1, 0, 0, 0));
+      cycleStart = new Date(year, month, 1, 0, 0, 0);
   }
 
   return cycleStart;
 }
 
 /**
- * Calculate the end date of the current budget cycle (always the current moment)
+ * Calculate the start date of the previous budget cycle
+ */
+export function getPreviousCycleStartDate(
+  cycleType: "first_working_day" | "last_working_day" | "specific_date" | "last_friday" = "first_working_day",
+  cycleDay?: number
+): Date {
+  const currentCycleStart = getCycleStartDate(cycleType, cycleDay);
+  const year = currentCycleStart.getFullYear();
+  const month = currentCycleStart.getMonth();
+
+  let prevCycleStart: Date;
+
+  switch (cycleType) {
+    case "first_working_day": {
+      // Previous cycle starts on first working day of previous month
+      prevCycleStart = new Date(year, month - 1, 1, 0, 0, 0);
+      while (prevCycleStart.getDay() === 0 || prevCycleStart.getDay() === 6) {
+        prevCycleStart.setDate(prevCycleStart.getDate() + 1);
+      }
+      break;
+    }
+
+    case "last_working_day": {
+      // Previous cycle starts on last working day of the month before the current cycle
+      prevCycleStart = new Date(year, month, 0, 0, 0, 0); // Last day of previous month
+      while (prevCycleStart.getDay() === 0 || prevCycleStart.getDay() === 6) {
+        prevCycleStart.setDate(prevCycleStart.getDate() - 1);
+      }
+      break;
+    }
+
+    case "specific_date": {
+      const cycleDay_ = cycleDay ?? 1;
+      prevCycleStart = new Date(year, month - 1, cycleDay_, 0, 0, 0);
+      break;
+    }
+
+    case "last_friday": {
+      // Find the last Friday of the month before the current cycle start
+      const prevMonthLastDay = new Date(year, month, 0, 0, 0, 0);
+      prevCycleStart = new Date(prevMonthLastDay);
+      while (prevCycleStart.getDay() !== 5) {
+        prevCycleStart.setDate(prevCycleStart.getDate() - 1);
+      }
+      break;
+    }
+
+    default:
+      prevCycleStart = new Date(year, month - 1, 1, 0, 0, 0);
+  }
+
+  return prevCycleStart;
+}
+
+/**
+ * Calculate the end date of the current budget cycle (end of current day)
  */
 export function getCycleEndDate(): Date {
-  return new Date();
+  const now = new Date();
+  now.setHours(23, 59, 59, 999); // End of today
+  return now;
 }
 
 /**
@@ -107,6 +165,7 @@ export function getNextCycleStartDate(
   cycleDay?: number
 ): Date {
   const now = new Date();
+  now.setHours(0, 0, 0, 0); // Normalize to start of day
   const year = now.getFullYear();
   const month = now.getMonth();
 
@@ -115,24 +174,24 @@ export function getNextCycleStartDate(
   switch (cycleType) {
     case "first_working_day": {
       // Next cycle starts on first working day of next month
-      nextCycleStart = new Date(Date.UTC(year, month + 1, 1, 0, 0, 0));
-      while (nextCycleStart.getUTCDay() === 0 || nextCycleStart.getUTCDay() === 6) {
-        nextCycleStart.setUTCDate(nextCycleStart.getUTCDate() + 1);
+      nextCycleStart = new Date(year, month + 1, 1, 0, 0, 0);
+      while (nextCycleStart.getDay() === 0 || nextCycleStart.getDay() === 6) {
+        nextCycleStart.setDate(nextCycleStart.getDate() + 1);
       }
       break;
     }
 
     case "last_working_day": {
       // Next cycle starts on last working day of current month
-      nextCycleStart = new Date(Date.UTC(year, month + 1, 0, 0, 0, 0)); // Last day of current month
-      while (nextCycleStart.getUTCDay() === 0 || nextCycleStart.getUTCDay() === 6) {
-        nextCycleStart.setUTCDate(nextCycleStart.getUTCDate() - 1);
+      nextCycleStart = new Date(year, month + 1, 0, 0, 0, 0); // Last day of current month
+      while (nextCycleStart.getDay() === 0 || nextCycleStart.getDay() === 6) {
+        nextCycleStart.setDate(nextCycleStart.getDate() - 1);
       }
       // If we've already passed this date, use next month
       if (now >= nextCycleStart) {
-        nextCycleStart = new Date(Date.UTC(year, month + 2, 0, 0, 0, 0));
-        while (nextCycleStart.getUTCDay() === 0 || nextCycleStart.getUTCDay() === 6) {
-          nextCycleStart.setUTCDate(nextCycleStart.getUTCDate() - 1);
+        nextCycleStart = new Date(year, month + 2, 0, 0, 0, 0);
+        while (nextCycleStart.getDay() === 0 || nextCycleStart.getDay() === 6) {
+          nextCycleStart.setDate(nextCycleStart.getDate() - 1);
         }
       }
       break;
@@ -140,26 +199,26 @@ export function getNextCycleStartDate(
 
     case "specific_date": {
       const day = cycleDay ?? 1;
-      nextCycleStart = new Date(Date.UTC(year, month, day, 0, 0, 0));
+      nextCycleStart = new Date(year, month, day, 0, 0, 0);
       // If this date has passed, use next month
       if (now >= nextCycleStart) {
-        nextCycleStart = new Date(Date.UTC(year, month + 1, day, 0, 0, 0));
+        nextCycleStart = new Date(year, month + 1, day, 0, 0, 0);
       }
       break;
     }
 
     case "last_friday": {
       // Find next last Friday
-      let lastDay = new Date(Date.UTC(year, month + 1, 0, 0, 0, 0));
-      while (lastDay.getUTCDay() !== 5) {
-        lastDay.setUTCDate(lastDay.getUTCDate() - 1);
+      let lastDay = new Date(year, month + 1, 0, 0, 0, 0);
+      while (lastDay.getDay() !== 5) {
+        lastDay.setDate(lastDay.getDate() - 1);
       }
       nextCycleStart = lastDay;
       // If we've passed this Friday, get next month's last Friday
       if (now >= nextCycleStart) {
-        lastDay = new Date(Date.UTC(year, month + 2, 0, 0, 0, 0));
-        while (lastDay.getUTCDay() !== 5) {
-          lastDay.setUTCDate(lastDay.getUTCDate() - 1);
+        lastDay = new Date(year, month + 2, 0, 0, 0, 0);
+        while (lastDay.getDay() !== 5) {
+          lastDay.setDate(lastDay.getDate() - 1);
         }
         nextCycleStart = lastDay;
       }
