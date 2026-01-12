@@ -7,7 +7,7 @@ import {
     getLastImportDates,
     getStaleAccounts,
     requestNotificationPermissions,
-    scheduleBudgetNotification,
+    scheduleBudgetNotificationWhenBackground,
     scheduleDailyBudgetCheck,
     scheduleImportReminder,
     scheduleWeeklyImportReminder,
@@ -145,7 +145,7 @@ export function useNotifications() {
         // Also send push notification
         const enabled = await areNotificationsEnabled();
         if (enabled) {
-          await scheduleBudgetNotification(statusInfo, summary.currency);
+          await scheduleBudgetNotificationWhenBackground(statusInfo, summary.currency);
         }
       } else if (statusInfo.status === 'close-to-limit') {
         await addNotification(createBudgetWarningNotification(
@@ -157,7 +157,7 @@ export function useNotifications() {
 
         const enabled = await areNotificationsEnabled();
         if (enabled) {
-          await scheduleBudgetNotification(statusInfo, summary.currency);
+          await scheduleBudgetNotificationWhenBackground(statusInfo, summary.currency);
         }
       } else if (statusInfo.status === 'under-budget' && statusInfo.daysRemaining <= 7) {
         // Only notify about being under budget near end of cycle
