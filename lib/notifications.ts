@@ -1,5 +1,6 @@
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import * as Notifications from 'expo-notifications';
+import { AppState } from 'react-native';
 import { captureException } from './sentry';
 
 // Storage keys
@@ -300,11 +301,44 @@ export async function scheduleImportReminder(
 }
 
 /**
+ * Schedule budget notification only when app is in background to avoid interrupting active users
+ */
+export async function scheduleBudgetNotificationWhenBackground(
+  statusInfo: BudgetStatusInfo,
+  currency: string = 'EUR'
+): Promise<string | null> {
+  // Only schedule push notifications if app is currently in background
+  if (AppState.currentState === 'active') {
+    console.log('App is active, skipping push notification for budget status');
+    return null;
+  }
+
+  // Check if we already have a pending notification for this status type to avoid spam
+  const scheduledNotifications = await getScheduledNotifications();
+  const existingBudgetNotification = scheduledNotifications.find(notification => {
+    const id = notification.identifier;
+    return id === NOTIFICATION_IDS.BUDGET_WARNING || 
+           id === NOTIFICATION_IDS.BUDGET_EXCEEDED || 
+           id === NOTIFICATION_IDS.BUDGET_ON_TRACK;
+  });
+
+  if (existingBudgetNotification) {
+    console.log('Budget notification already scheduled, skipping duplicate');
+    return null;
+  }
+
+  // Schedule with a reasonable delay (1-2 hours) to allow user to return to app naturally
+  const delayMinutes = statusInfo.status === 'over-budget' ? 60 : 120; // Sooner for exceeded budget
+  return scheduleBudgetNotification(statusInfo, currency, delayMinutes);
+}
+
+/**
  * Schedule budget warning notification
  */
 export async function scheduleBudgetNotification(
   statusInfo: BudgetStatusInfo,
-  currency: string = 'EUR'
+  currency: string = 'EUR',
+  delayMinutes: number = 30 // Default to 30 minutes delay
 ): Promise<string | null> {
   const formatAmount = (amount: number) => {
     return new Intl.NumberFormat('en-IE', {
@@ -341,7 +375,7 @@ export async function scheduleBudgetNotification(
 
   const trigger: Notifications.TimeIntervalTriggerInput = {
     type: Notifications.SchedulableTriggerInputTypes.TIME_INTERVAL,
-    seconds: 5, // Immediate for testing
+    seconds: delayMinutes * 60, // Convert minutes to seconds
   };
 
   return scheduleNotification(
