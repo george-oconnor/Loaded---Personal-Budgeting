@@ -1,5 +1,5 @@
 import AsyncStorage from '@react-native-async-storage/async-storage';
-import { ID, Query, Permission, Role } from 'appwrite';
+import { ID, Permission, Query, Role } from 'appwrite';
 import { databases, getCategories } from './appwrite';
 
 const MERCHANT_MAPPINGS_KEY = 'budget_app_merchant_categories';
