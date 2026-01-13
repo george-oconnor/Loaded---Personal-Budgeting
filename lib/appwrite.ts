@@ -1,4 +1,4 @@
-import { Account, Client, Databases, ID, Query, Permission, Role } from "appwrite";
+import { Account, Client, Databases, ID, Permission, Query, Role } from "appwrite";
 import { addBreadcrumb, captureException } from "./sentry";
 
 const endpoint = process.env.EXPO_PUBLIC_APPWRITE_ENDPOINT;
