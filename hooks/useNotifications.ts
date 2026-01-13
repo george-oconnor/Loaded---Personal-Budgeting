@@ -7,6 +7,7 @@ import {
     getLastImportDates,
     getStaleAccounts,
     requestNotificationPermissions,
+    scheduleBudgetMilestoneNotification,
     scheduleBudgetNotificationWhenBackground,
     scheduleDailyBudgetCheck,
     scheduleImportReminder,
@@ -135,15 +136,24 @@ export function useNotifications() {
 
       const statusInfo = calculateBudgetStatus(expenses, budget, cycleStart);
 
-      // Only notify for significant status changes
+      // Use smart milestone notifications for better engagement
+      const enabled = await areNotificationsEnabled();
+      if (enabled) {
+        await scheduleBudgetMilestoneNotification(
+          statusInfo.percentage,
+          statusInfo.remaining,
+          statusInfo.daysRemaining,
+          summary.currency
+        );
+      }
+
+      // Also create in-app notifications for important events
       if (statusInfo.status === 'over-budget') {
         await addNotification(createBudgetExceededNotification(
           Math.abs(statusInfo.remaining),
           summary.currency
         ));
         
-        // Also send push notification
-        const enabled = await areNotificationsEnabled();
         if (enabled) {
           await scheduleBudgetNotificationWhenBackground(statusInfo, summary.currency);
         }
@@ -155,7 +165,6 @@ export function useNotifications() {
           summary.currency
         ));
 
-        const enabled = await areNotificationsEnabled();
         if (enabled) {
           await scheduleBudgetNotificationWhenBackground(statusInfo, summary.currency);
         }

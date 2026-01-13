@@ -389,46 +389,169 @@ export async function scheduleBudgetNotification(
 
 /**
  * Schedule daily budget check notification
+ * Schedules multiple times per day for better awareness
  */
-export async function scheduleDailyBudgetCheck(): Promise<string | null> {
-  const id = 'daily-budget-check';
-  
-  // Schedule for 9 PM daily
-  const trigger: Notifications.DailyTriggerInput = {
-    type: Notifications.SchedulableTriggerInputTypes.DAILY,
-    hour: 21,
-    minute: 0,
-  };
+export async function scheduleDailyBudgetCheck(): Promise<string[]> {
+  const notificationTimes = [
+    { hour: 12, minute: 0, label: 'midday' },   // Noon check
+    { hour: 18, minute: 0, label: 'evening' },  // 6 PM check
+    { hour: 21, minute: 0, label: 'night' },    // 9 PM final check
+  ];
 
-  return scheduleNotification(
-    id,
-    '📊 Daily Budget Check',
-    'Tap to see how your spending is tracking today.',
-    trigger,
-    { type: 'daily_check' }
-  );
+  const scheduledIds: string[] = [];
+
+  for (const time of notificationTimes) {
+    const id = `daily-budget-check-${time.label}`;
+    
+    const trigger: Notifications.DailyTriggerInput = {
+      type: Notifications.SchedulableTriggerInputTypes.DAILY,
+      hour: time.hour,
+      minute: time.minute,
+    };
+
+    const body = time.hour === 21 
+      ? 'End of day budget review - see how you did today'
+      : time.hour === 18
+      ? 'Evening budget check - stay on track for the rest of the day'
+      : 'Lunchtime budget check - see your spending so far';
+
+    const notificationId = await scheduleNotification(
+      id,
+      '📊 Budget Check',
+      body,
+      trigger,
+      { type: 'daily_check', timeOfDay: time.label }
+    );
+    
+    if (notificationId) {
+      scheduledIds.push(notificationId);
+    }
+  }
+
+  return scheduledIds;
 }
 
 /**
  * Schedule weekly import reminder
+ * Reminds users twice per week for better engagement
  */
-export async function scheduleWeeklyImportReminder(): Promise<string | null> {
-  const id = NOTIFICATION_IDS.IMPORT_REMINDER;
+export async function scheduleWeeklyImportReminder(): Promise<string[]> {
+  const scheduledIds: string[] = [];
   
-  // Schedule for Sunday at 6 PM
-  const trigger: Notifications.WeeklyTriggerInput = {
+  // Sunday evening reminder
+  const sundayTrigger: Notifications.WeeklyTriggerInput = {
     type: Notifications.SchedulableTriggerInputTypes.WEEKLY,
     weekday: 1, // Sunday
     hour: 18,
     minute: 0,
   };
 
+  const sundayId = await scheduleNotification(
+    NOTIFICATION_IDS.IMPORT_REMINDER + '-sunday',
+    '📥 Weekend Import Reminder',
+    'Start the week fresh! Import your latest transactions to keep your budget accurate.',
+    sundayTrigger,
+    { type: 'import_reminder', day: 'sunday' }
+  );
+
+  if (sundayId) scheduledIds.push(sundayId);
+
+  // Wednesday evening reminder (mid-week check-in)
+  const wednesdayTrigger: Notifications.WeeklyTriggerInput = {
+    type: Notifications.SchedulableTriggerInputTypes.WEEKLY,
+    weekday: 4, // Wednesday
+    hour: 19,
+    minute: 0,
+  };
+
+  const wednesdayId = await scheduleNotification(
+    NOTIFICATION_IDS.IMPORT_REMINDER + '-wednesday',
+    '📊 Mid-Week Import Check',
+    'Time for a mid-week update! Import your recent transactions to stay on top of your budget.',
+    wednesdayTrigger,
+    { type: 'import_reminder', day: 'wednesday' }
+  );
+
+  if (wednesdayId) scheduledIds.push(wednesdayId);
+
+  return scheduledIds;
+}
+
+/**
+ * Schedule smart budget milestone notifications
+ * Tracks when user crosses budget thresholds and sends timely alerts
+ */
+export async function scheduleBudgetMilestoneNotification(
+  percentage: number,
+  remaining: number,
+  daysRemaining: number,
+  currency: string = 'EUR'
+): Promise<string | null> {
+  // Don't spam - only notify at key milestones
+  const milestones = [50, 75, 85, 90, 100];
+  const milestone = milestones.find(m => percentage >= m && percentage < m + 5);
+  
+  if (!milestone) return null;
+
+  // Check if we've already notified for this milestone this cycle
+  const milestoneKey = `@budget_milestone_${milestone}`;
+  const lastNotified = await AsyncStorage.getItem(milestoneKey);
+  
+  if (lastNotified) {
+    const lastDate = new Date(lastNotified);
+    const now = new Date();
+    // If we notified in the last 24 hours, skip
+    if (now.getTime() - lastDate.getTime() < 24 * 60 * 60 * 1000) {
+      return null;
+    }
+  }
+
+  const formatAmount = (amount: number) => {
+    return new Intl.NumberFormat('en-IE', {
+      style: 'currency',
+      currency,
+      minimumFractionDigits: 0,
+      maximumFractionDigits: 0,
+    }).format(amount / 100);
+  };
+
+  let title: string;
+  let body: string;
+  let id: string;
+
+  if (milestone === 100) {
+    id = NOTIFICATION_IDS.BUDGET_EXCEEDED;
+    title = '🚨 Budget Exceeded';
+    body = `You've spent ${Math.round(percentage)}% of your budget. Time to review your spending!`;
+  } else if (milestone >= 90) {
+    id = NOTIFICATION_IDS.BUDGET_WARNING;
+    title = '⚠️ Almost at Budget Limit';
+    body = `${milestone}% of budget used. Only ${formatAmount(remaining)} left for ${daysRemaining} days.`;
+  } else if (milestone >= 75) {
+    id = 'budget-milestone-75';
+    title = '📊 Budget Update';
+    body = `You've used ${milestone}% of your budget. ${formatAmount(remaining)} remaining.`;
+  } else {
+    id = 'budget-milestone-50';
+    title = '✓ Halfway There';
+    body = `${milestone}% of budget used. ${formatAmount(remaining)} left for the cycle.`;
+  }
+
+  // Schedule for immediate delivery
+  const trigger: Notifications.TimeIntervalTriggerInput = {
+    type: Notifications.SchedulableTriggerInputTypes.TIME_INTERVAL,
+    seconds: 5, // 5 seconds delay to avoid spam
+  };
+
+  // Mark this milestone as notified
+  await AsyncStorage.setItem(milestoneKey, new Date().toISOString());
+
   return scheduleNotification(
     id,
-    '📥 Weekly Import Reminder',
-    'Don\'t forget to import your latest transactions to keep your budget up to date!',
+    title,
+    body,
     trigger,
-    { type: 'import_reminder' }
+    { type: 'budget_milestone', milestone, percentage, remaining }
   );
 }
 
@@ -453,6 +576,22 @@ export async function cancelAllNotifications(): Promise<void> {
     await AsyncStorage.removeItem(SCHEDULED_NOTIFICATIONS_KEY);
   } catch (error) {
     console.error('Failed to cancel all notifications:', error);
+  }
+}
+
+/**
+ * Clear budget milestone tracking for new cycle
+ * Call this when a new budget cycle starts
+ */
+export async function clearBudgetMilestones(): Promise<void> {
+  try {
+    const milestones = [50, 75, 85, 90, 100];
+    for (const milestone of milestones) {
+      await AsyncStorage.removeItem(`@budget_milestone_${milestone}`);
+    }
+    console.log('Budget milestones cleared for new cycle');
+  } catch (error) {
+    console.error('Failed to clear budget milestones:', error);
   }
 }
 

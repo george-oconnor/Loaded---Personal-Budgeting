@@ -12,7 +12,15 @@ export type NotificationType =
   | 'budget_on_track'
   | 'import_reminder'
   | 'account_stale'
-  | 'general';
+  | 'general'
+  | 'sync_progress'
+  | 'sync_complete'
+  | 'sync_paused'
+  | 'sync_failed'
+  | 'delete_progress'
+  | 'delete_complete'
+  | 'delete_paused'
+  | 'delete_failed';
 
 export type InAppNotification = {
   id: string;
@@ -330,5 +338,117 @@ export function createGeneralImportReminderNotification(): Omit<InAppNotificatio
     icon: 'refresh-cw',
     iconColor: '#8B5CF6',
     actionRoute: '/import',
+  };
+}
+
+export function createSyncProgressNotification(
+  current: number,
+  total: number
+): Omit<InAppNotification, 'id' | 'createdAt' | 'read' | 'dismissed'> {
+  return {
+    type: 'sync_progress',
+    title: '☁️ Syncing Transactions',
+    body: `Uploading ${current} of ${total} transactions...`,
+    priority: 'low',
+    icon: 'upload-cloud',
+    iconColor: '#3B82F6',
+    metadata: { current, total },
+  };
+}
+
+export function createSyncCompleteNotification(
+  count: number
+): Omit<InAppNotification, 'id' | 'createdAt' | 'read' | 'dismissed'> {
+  return {
+    type: 'sync_complete',
+    title: '✓ Sync Complete',
+    body: `Successfully synced ${count} transaction${count === 1 ? '' : 's'}`,
+    priority: 'low',
+    icon: 'check-circle',
+    iconColor: '#10B981',
+    metadata: { count },
+  };
+}
+
+export function createSyncPausedNotification(
+  remaining: number
+): Omit<InAppNotification, 'id' | 'createdAt' | 'read' | 'dismissed'> {
+  return {
+    type: 'sync_paused',
+    title: '☁️ Syncing in Background',
+    body: `${remaining} transaction${remaining === 1 ? '' : 's'} syncing in the background`,
+    priority: 'medium',
+    icon: 'cloud',
+    iconColor: '#3B82F6',
+    metadata: { remaining },
+  };
+}
+
+export function createSyncFailedNotification(
+  failedCount: number
+): Omit<InAppNotification, 'id' | 'createdAt' | 'read' | 'dismissed'> {
+  return {
+    type: 'sync_failed',
+    title: '⚠️ Sync Failed',
+    body: `${failedCount} transaction${failedCount === 1 ? '' : 's'} failed to sync`,
+    priority: 'high',
+    icon: 'alert-circle',
+    iconColor: '#EF4444',
+    metadata: { failedCount },
+  };
+}
+
+export function createDeleteProgressNotification(
+  deleted: number,
+  total: number
+): Omit<InAppNotification, 'id' | 'createdAt' | 'read' | 'dismissed'> {
+  const percentage = total > 0 ? Math.round((deleted / total) * 100) : 0;
+  return {
+    type: 'delete_progress',
+    title: '🗑️ Deleting Transactions',
+    body: `Removing transactions... ${percentage}% complete`,
+    priority: 'low',
+    icon: 'trash-2',
+    iconColor: '#EF4444',
+    metadata: { deleted, total, percentage },
+  };
+}
+
+export function createDeleteCompleteNotification(
+  count: number
+): Omit<InAppNotification, 'id' | 'createdAt' | 'read' | 'dismissed'> {
+  return {
+    type: 'delete_complete',
+    title: '✓ Delete Complete',
+    body: `Successfully removed ${count} transaction${count === 1 ? '' : 's'}`,
+    priority: 'low',
+    icon: 'check-circle',
+    iconColor: '#10B981',
+    metadata: { count },
+  };
+}
+
+export function createDeletePausedNotification(): Omit<InAppNotification, 'id' | 'createdAt' | 'read' | 'dismissed'> {
+  return {
+    type: 'delete_paused',
+    title: '🗑️ Deleting in Background',
+    body: 'Deletion continues in the background',
+    priority: 'medium',
+    icon: 'trash-2',
+    iconColor: '#EF4444',
+  };
+}
+
+export function createDeleteFailedNotification(
+  error: string
+): Omit<InAppNotification, 'id' | 'createdAt' | 'read' | 'dismissed'> {
+  return {
+    type: 'delete_failed',
+    title: '⚠️ Delete Failed',
+    body: error || 'Failed to delete transactions',
+    priority: 'high',
+    icon: 'alert-circle',
+    iconColor: '#EF4444',
+    metadata: { error },
   };
 }
