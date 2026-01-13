@@ -1,4 +1,4 @@
-import { Account, Client, Databases, ID, Query } from "appwrite";
+import { Account, Client, Databases, ID, Query, Permission, Role } from "appwrite";
 import { addBreadcrumb, captureException } from "./sentry";
 
 const endpoint = process.env.EXPO_PUBLIC_APPWRITE_ENDPOINT;
@@ -133,12 +133,22 @@ export async function createUserProfile(
 ) {
   if (!databaseId || !usersTableId) throw new Error("Appwrite env not configured");
   
-  return await databases.createDocument(databaseId, usersTableId, userId, {
+  return await databases.createDocument(
+    databaseId,
+    usersTableId,
     userId,
-    email,
-    firstname: firstName,
-    lastname: lastName,
-  });
+    {
+      userId,
+      email,
+      firstname: firstName,
+      lastname: lastName,
+    },
+    [
+      Permission.read(Role.user(userId)),
+      Permission.update(Role.user(userId)),
+      Permission.delete(Role.user(userId)),
+    ]
+  );
 }
 
 export async function getUserProfile(userId: string) {
@@ -255,7 +265,17 @@ export async function upsertAccountBalance(
       return await databases.updateDocument(databaseId, balancesTableId, doc.$id, payload);
     }
 
-    return await databases.createDocument(databaseId, balancesTableId, ID.unique(), payload);
+    return await databases.createDocument(
+      databaseId,
+      balancesTableId,
+      ID.unique(),
+      payload,
+      [
+        Permission.read(Role.user(userId)),
+        Permission.update(Role.user(userId)),
+        Permission.delete(Role.user(userId)),
+      ]
+    );
   } catch (err) {
     console.error("upsertAccountBalance error", err);
     captureException(err);
@@ -453,10 +473,20 @@ export async function updateMonthlyBudget(
     return await databases.updateDocument(databaseId, budgetsTableId, existingDoc.$id, budgetData);
   } else {
     // Create new
-    return await databases.createDocument(databaseId, budgetsTableId, ID.unique(), {
-      userId,
-      ...budgetData,
-    });
+    return await databases.createDocument(
+      databaseId,
+      budgetsTableId,
+      ID.unique(),
+      {
+        userId,
+        ...budgetData,
+      },
+      [
+        Permission.read(Role.user(userId)),
+        Permission.update(Role.user(userId)),
+        Permission.delete(Role.user(userId)),
+      ]
+    );
   }
 }
 
@@ -693,7 +723,12 @@ export async function createTransaction(
       databaseId, 
       transactionsTableId, 
       customId || ID.unique(), // Use custom ID if provided, otherwise generate
-      data
+      data,
+      [
+        Permission.read(Role.user(userId)),
+        Permission.update(Role.user(userId)),
+        Permission.delete(Role.user(userId)),
+      ]
     );
   } catch (err) {
     captureException(err instanceof Error ? err : new Error(String(err)), {

@@ -1,6 +1,7 @@
 import { NotificationTray } from "@/components/NotificationTray";
 import { useAutoSync } from "@/hooks/useAutoSync";
 import { useNotificationResponse, useNotifications } from "@/hooks/useNotifications";
+import { initializeBackgroundTasks } from "@/lib/backgroundTasks";
 import { detectCSVProvider } from "@/lib/csvDetector";
 import { addBreadcrumb, captureException, captureMessage, ErrorBoundary, initSentry } from "@/lib/sentry";
 import { useSessionStore } from "@/store/useSessionStore";
@@ -74,6 +75,21 @@ export default function RootLayout() {
   // Enable notifications
   useNotifications();
   useNotificationResponse();
+
+  // Initialize background tasks
+  useEffect(() => {
+    const initBackground = async () => {
+      try {
+        await initializeBackgroundTasks();
+        console.log('Background tasks initialized');
+      } catch (error) {
+        console.error('Failed to initialize background tasks:', error);
+        captureException(error instanceof Error ? error : new Error(String(error)));
+      }
+    };
+    
+    initBackground();
+  }, []);
 
   // Handle deep links for password reset and CSV file imports
   useEffect(() => {

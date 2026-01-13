@@ -1,5 +1,5 @@
 import AsyncStorage from '@react-native-async-storage/async-storage';
-import { ID, Query } from 'appwrite';
+import { ID, Query, Permission, Role } from 'appwrite';
 import { databases, getCategories } from './appwrite';
 
 const MERCHANT_MAPPINGS_KEY = 'budget_app_merchant_categories';
@@ -167,14 +167,23 @@ export async function learnMerchantCategory(merchantName: string, categoryId: st
           });
         } else {
           // Create new vote record
-          await databases.createDocument(databaseId, merchantVotesTableId, ID.unique(), {
-            merchant_key: merchantKey,
-            merchant_name: merchantName,
-            category_id: categoryId,
-            votes: 1,
-            last_voted: new Date().toISOString(),
-            ...(userId && { user_id: userId }),
-          });
+          await databases.createDocument(
+            databaseId,
+            merchantVotesTableId,
+            ID.unique(),
+            {
+              merchant_key: merchantKey,
+              merchant_name: merchantName,
+              category_id: categoryId,
+              votes: 1,
+              last_voted: new Date().toISOString(),
+              ...(userId && { user_id: userId }),
+            },
+            [
+              Permission.read(Role.users()), // Anyone authenticated can read votes
+              Permission.update(Role.users()), // Anyone can update vote counts
+            ]
+          );
         }
       } catch (dbError) {
         console.error('Error saving to merchant votes database:', dbError);
