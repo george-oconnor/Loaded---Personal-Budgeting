@@ -41,6 +41,10 @@ yarn-error.*
 # typescript
 *.tsbuildinfo
 
+# Temporary setup scripts (contain secrets)
+setup-eas-secrets.ps1
+EAS-SECRETS-GUIDE.md
+
 app-example
 
 # store listing files
