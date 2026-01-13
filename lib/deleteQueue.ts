@@ -1,7 +1,16 @@
+import {
+    createDeleteCompleteNotification,
+    createDeleteFailedNotification,
+    createDeletePausedNotification,
+    createDeleteProgressNotification,
+    useNotificationStore
+} from '@/store/useNotificationStore';
 import AsyncStorage from "@react-native-async-storage/async-storage";
 import { Query } from "appwrite";
+import * as Notifications from 'expo-notifications';
 import { AppState } from "react-native";
 import { databases } from "./appwrite";
+import { areNotificationsEnabled } from './notifications';
 import { captureException, captureMessage } from './sentry';
 
 const DATABASE_ID = process.env.EXPO_PUBLIC_APPWRITE_DATABASE_ID;
@@ -56,6 +65,14 @@ export async function queueDeleteAll(userId: string): Promise<void> {
   
   // Stop any in-progress sync
   await resetSyncStatus();
+  
+  // Register background task for deletion
+  try {
+    const { registerBackgroundDeleteTask } = await import('./backgroundTasks');
+    await registerBackgroundDeleteTask();
+  } catch (error) {
+    console.error('Failed to register background delete task:', error);
+  }
   
   console.log("Delete all operation queued for user:", userId);
 }
@@ -137,11 +154,34 @@ export async function startDeletingTransactions(
 
     while (true) {
       // Check if app went to background
+      // With background tasks, we can continue deleting even in background
       if (AppState.currentState !== "active") {
-        console.log("App went to background, pausing deletion");
-        await updateDeleteStatus({ status: "pending", totalDeleted });
-        onProgressUpdate?.(totalDeleted, "paused");
-        return;
+        console.log(`[Delete] App backgrounded. Background task will continue deletion.`);
+        
+        // Don't pause - let background task continue
+        // Just notify user that deletion continues in background
+        try {
+          const { addNotification } = useNotificationStore.getState();
+          await addNotification(createDeletePausedNotification());
+          
+          // Send push notification
+          if (await areNotificationsEnabled()) {
+            await Notifications.scheduleNotificationAsync({
+              content: {
+                title: '🗑️ Deleting in Background',
+                body: 'Deletion continues in the background',
+                data: { type: 'delete_background' },
+                sound: false,
+                badge: 1,
+              },
+              trigger: null,
+            });
+          }
+        } catch (notifError) {
+          console.error('Failed to send delete background notification:', notifError);
+        }
+        
+        // Continue processing instead of pausing
       }
 
       const response = await databases.listDocuments(
@@ -155,6 +195,32 @@ export async function startDeletingTransactions(
         console.log(`Delete completed. Total deleted: ${totalDeleted}`);
         await updateDeleteStatus({ status: "completed", totalDeleted });
         onProgressUpdate?.(totalDeleted, "completed");
+        
+        // Add completion notification
+        try {
+          const { addNotification } = useNotificationStore.getState();
+          const isBackground = AppState.currentState !== 'active';
+          
+          if (totalDeleted > 0) {
+            await addNotification(createDeleteCompleteNotification(totalDeleted));
+            
+            // Send push notification if app is in background
+            if (isBackground && await areNotificationsEnabled()) {
+              await Notifications.scheduleNotificationAsync({
+                content: {
+                  title: '✓ Delete Complete',
+                  body: `Successfully removed ${totalDeleted} transaction${totalDeleted === 1 ? '' : 's'}`,
+                  data: { type: 'delete_complete', count: totalDeleted },
+                  sound: true,
+                  badge: 1,
+                },
+                trigger: null,
+              });
+            }
+          }
+        } catch (notifError) {
+          console.error('Failed to send delete completion notification:', notifError);
+        }
         
         // Clean up the delete queue and sync queue
         await AsyncStorage.removeItem(DELETE_QUEUE_KEY);
@@ -229,6 +295,16 @@ export async function startDeletingTransactions(
 
       await updateDeleteStatus({ totalDeleted });
       onProgressUpdate?.(totalDeleted, "in-progress");
+      
+      // Update progress notification every 10 deletions
+      if (totalDeleted % 10 === 0 && totalToDelete > 0) {
+        try {
+          const { addNotification } = useNotificationStore.getState();
+          await addNotification(createDeleteProgressNotification(totalDeleted, totalToDelete));
+        } catch (notifError) {
+          console.error('Failed to send delete progress notification:', notifError);
+        }
+      }
 
       // Wait before next batch to avoid rate limits
       await new Promise((resolve) => setTimeout(resolve, delayBetweenBatches));
@@ -241,6 +317,28 @@ export async function startDeletingTransactions(
       totalDeleted: 0,
     });
     onProgressUpdate?.(0, "failed");
+    
+    // Add failure notification
+    try {
+      const { addNotification } = useNotificationStore.getState();
+      await addNotification(createDeleteFailedNotification(error.message || 'Unknown error'));
+      
+      // Always send push notification for failures
+      if (await areNotificationsEnabled()) {
+        await Notifications.scheduleNotificationAsync({
+          content: {
+            title: '⚠️ Delete Failed',
+            body: error.message || 'Failed to delete transactions',
+            data: { type: 'delete_failed' },
+            sound: true,
+            badge: 1,
+          },
+          trigger: null,
+        });
+      }
+    } catch (notifError) {
+      console.error('Failed to send delete failure notification:', notifError);
+    }
   } finally {
     // Release lock
     deleteOperationLocked = false;

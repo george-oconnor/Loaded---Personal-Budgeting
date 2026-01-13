@@ -1,9 +1,16 @@
+import {
+    createSyncCompleteNotification,
+    createSyncFailedNotification,
+    createSyncPausedNotification,
+    useNotificationStore
+} from '@/store/useNotificationStore';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { ID, Query } from 'appwrite';
 import * as Notifications from 'expo-notifications';
 import { AppState } from 'react-native';
 import { createBulkTransactions, databases } from './appwrite';
 import { getDeleteStatus } from './deleteQueue';
+import { areNotificationsEnabled } from './notifications';
 import { addBreadcrumb, captureException } from './sentry';
 
 export interface QueuedTransaction {
@@ -32,16 +39,6 @@ export interface QueuedTransaction {
 const SYNC_QUEUE_KEY = 'budget_app_sync_queue';
 const SYNC_STATUS_KEY = 'budget_app_sync_status';
 const MAX_RETRY_ATTEMPTS = 3;
-
-// Configure notification handler
-Notifications.setNotificationHandler({
-  handleNotification: async () => ({
-    shouldShowBanner: true,
-    shouldShowList: true,
-    shouldPlaySound: false,
-    shouldSetBadge: false,
-  }),
-});
 
 export interface SyncStatus {
   isSyncing: boolean;
@@ -87,6 +84,14 @@ export async function queueTransactionsForSync(
 
     const updatedQueue = [...queue, ...newTransactions];
     await AsyncStorage.setItem(SYNC_QUEUE_KEY, JSON.stringify(updatedQueue));
+    
+    // Ensure background task is registered when transactions are queued
+    try {
+      const { registerBackgroundSyncTask } = await import('./backgroundTasks');
+      await registerBackgroundSyncTask();
+    } catch (error) {
+      console.error('Failed to register background sync task:', error);
+    }
     
     return newTransactions;
   } catch (error) {
@@ -345,45 +350,36 @@ export async function startSyncingTransactions(
         }
 
         // Check if app is still active before syncing
+        // With background tasks, we can continue syncing even in background
         if (AppState.currentState !== 'active') {
-          // Send notification about paused sync
           const remainingCount = pendingTransactions.length - totalSucceeded;
+          console.log(`[Sync] App backgrounded with ${remainingCount} pending. Background task will continue.`);
+          
+          // Don't pause - let background task continue
+          // Just notify user that sync continues in background
           try {
-            const { status } = await Notifications.getPermissionsAsync();
+            const { addNotification } = useNotificationStore.getState();
+            await addNotification(createSyncPausedNotification(remainingCount));
             
-            if (status === 'granted') {
+            // Send push notification
+            if (await areNotificationsEnabled()) {
               await Notifications.scheduleNotificationAsync({
                 content: {
-                  title: 'Sync Paused',
-                  body: `${remainingCount} transaction${remainingCount === 1 ? '' : 's'} will sync when you return to the app`,
-                  data: { type: 'sync_paused' },
+                  title: '☁️ Syncing in Background',
+                  body: `${remainingCount} transaction${remainingCount === 1 ? '' : 's'} syncing in the background`,
+                  data: { type: 'sync_background', remaining: remainingCount },
+                  sound: false,
+                  badge: 1,
                 },
-                trigger: null, // Show immediately
+                trigger: null, // Immediate
               });
             }
           } catch (notifError) {
             console.error('Failed to send notification:', notifError);
           }
           
-          // Reset transactions back to pending so they can retry later
-          const resetQueue = (await getQueuedTransactions()).map((t) => {
-            const corresponding = userTransactions.find((ut) => ut.id === t.id);
-            if (corresponding && t.syncStatus === 'syncing') {
-              return { ...t, syncStatus: 'pending' as const };
-            }
-            return t;
-          });
-          await AsyncStorage.setItem(SYNC_QUEUE_KEY, JSON.stringify(resetQueue));
-          
-          // Update status to not syncing
-          const pausedStatus: SyncStatus = {
-            isSyncing: false,
-            progress: { current: totalSucceeded, total: pendingTransactions.length },
-            failedCount: totalFailed,
-          };
-          await AsyncStorage.setItem(SYNC_STATUS_KEY, JSON.stringify(pausedStatus));
-          onProgressUpdate?.(pausedStatus);
-          return { succeeded: totalSucceeded, failed: totalFailed };
+          // Continue processing instead of returning
+          // The background task will handle completion
         }
 
         const result = await createBulkTransactions(
@@ -526,6 +522,50 @@ export async function startSyncingTransactions(
     await AsyncStorage.setItem(SYNC_STATUS_KEY, JSON.stringify(finalStatus));
     onProgressUpdate?.(finalStatus);
     clearInterval(cancelPoll);
+    
+    // Add completion notification
+    try {
+      const { addNotification } = useNotificationStore.getState();
+      const isBackground = AppState.currentState !== 'active';
+      
+      if (totalSucceeded > 0) {
+        await addNotification(createSyncCompleteNotification(totalSucceeded));
+        
+        // Send push notification if app is in background
+        if (isBackground && await areNotificationsEnabled()) {
+          await Notifications.scheduleNotificationAsync({
+            content: {
+              title: '✓ Sync Complete',
+              body: `Successfully synced ${totalSucceeded} transaction${totalSucceeded === 1 ? '' : 's'}`,
+              data: { type: 'sync_complete', count: totalSucceeded },
+              sound: true,
+              badge: 1,
+            },
+            trigger: null, // Immediate
+          });
+        }
+      }
+      if (totalFailed > 0) {
+        await addNotification(createSyncFailedNotification(totalFailed));
+        
+        // Always send push notification for failures
+        if (await areNotificationsEnabled()) {
+          await Notifications.scheduleNotificationAsync({
+            content: {
+              title: '⚠️ Sync Failed',
+              body: `${totalFailed} transaction${totalFailed === 1 ? '' : 's'} failed to sync`,
+              data: { type: 'sync_failed', count: totalFailed },
+              sound: true,
+              badge: 1,
+            },
+            trigger: null, // Immediate
+          });
+        }
+      }
+    } catch (notifError) {
+      console.error('Failed to send sync completion notification:', notifError);
+    }
+    
     return { succeeded: totalSucceeded, failed: totalFailed };
   } catch (error) {
     const errorMsg = error instanceof Error ? error.message : 'Unknown error during sync';
