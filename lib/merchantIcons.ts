@@ -2,6 +2,219 @@
  * Merchant icon utilities for displaying brand favicons
  */
 
+import AsyncStorage from '@react-native-async-storage/async-storage';
+import { ID, Permission, Query, Role } from 'appwrite';
+import { databases } from './appwrite';
+
+const ICON_SUGGESTIONS_KEY = 'budget_app_icon_suggestions';
+const databaseId = process.env.EXPO_PUBLIC_APPWRITE_DATABASE_ID;
+const iconVotesTableId =
+  process.env.EXPO_PUBLIC_APPWRITE_TABLE_ICON_VOTES ||
+  process.env.EXPO_PUBLIC_APPWRITE_COLLECTION_ICON_VOTES ||
+  'icon_votes';
+
+// Interface for crowd-sourced icon mappings
+interface IconMapping {
+  [merchantKey: string]: string; // merchantKey -> iconUrl
+}
+
+/**
+ * Get normalized merchant key from transaction title
+ */
+function getMerchantKey(title: string): string {
+  return title.trim().toLowerCase().replace(/[^a-z0-9]/g, '');
+}
+
+/**
+ * Get crowd-sourced icon mappings from database (most voted icon URL wins)
+ */
+async function getCrowdSourcedIcons(): Promise<IconMapping> {
+  try {
+    if (!databaseId || !iconVotesTableId) {
+      // Fallback to AsyncStorage if database not configured
+      const data = await AsyncStorage.getItem(ICON_SUGGESTIONS_KEY);
+      return data ? JSON.parse(data) : {};
+    }
+
+    // Basic retry on transient Appwrite failures
+    const maxAttempts = 2;
+    let attempt = 0;
+    let res: any;
+    while (attempt < maxAttempts) {
+      try {
+        res = await databases.listDocuments(databaseId, iconVotesTableId, []);
+        break;
+      } catch (err: any) {
+        attempt++;
+        const msg = String(err?.message || err);
+        const isTransient = msg.includes('503') || msg.toLowerCase().includes('timeout');
+        if (!isTransient || attempt >= maxAttempts) {
+          throw err;
+        }
+        await new Promise((r) => setTimeout(r, 400));
+      }
+    }
+
+    const mappings: IconMapping = {};
+
+    // Group votes by merchant and find the most popular icon URL
+    const votesByMerchant = new Map<string, Map<string, number>>();
+
+    res.documents.forEach((doc: any) => {
+      const merchantKey = doc.merchant_key;
+      const iconUrl = doc.icon_url;
+
+      if (!votesByMerchant.has(merchantKey)) {
+        votesByMerchant.set(merchantKey, new Map());
+      }
+      const urlVotes = votesByMerchant.get(merchantKey)!;
+      urlVotes.set(iconUrl, (urlVotes.get(iconUrl) || 0) + doc.votes);
+    });
+
+    // Pick the most voted icon URL for each merchant
+    votesByMerchant.forEach((urlVotes, merchantKey) => {
+      let topUrl = '';
+      let topVotes = 0;
+      urlVotes.forEach((votes, url) => {
+        if (votes > topVotes) {
+          topVotes = votes;
+          topUrl = url;
+        }
+      });
+      if (topUrl) {
+        mappings[merchantKey] = topUrl;
+      }
+    });
+
+    return mappings;
+  } catch (error) {
+    const msg = String((error as any)?.message || error);
+    if (msg.includes('503') || msg.toLowerCase().includes('timeout')) {
+      console.warn('Icon suggestions temporarily unavailable, using local cache');
+    } else {
+      console.error('Error loading icon suggestions:', error);
+    }
+    // Fallback to AsyncStorage
+    try {
+      const data = await AsyncStorage.getItem(ICON_SUGGESTIONS_KEY);
+      return data ? JSON.parse(data) : {};
+    } catch {
+      return {};
+    }
+  }
+}
+
+/**
+ * Suggest an icon URL for a merchant (crowd-sourced learning)
+ */
+export async function suggestMerchantIcon(
+  merchantName: string,
+  iconUrl: string,
+  userId?: string
+): Promise<void> {
+  try {
+    const merchantKey = getMerchantKey(merchantName);
+
+    // Save to database if configured (for crowd-sourcing)
+    if (databaseId && iconVotesTableId) {
+      try {
+        // Check if this merchant-icon vote already exists
+        const existing = await databases.listDocuments(databaseId, iconVotesTableId, [
+          Query.equal('merchant_key', merchantKey),
+          Query.equal('icon_url', iconUrl),
+        ]);
+
+        if (existing.documents.length > 0) {
+          // Increment vote count
+          const doc = existing.documents[0] as any;
+          await databases.updateDocument(databaseId, iconVotesTableId, doc.$id, {
+            votes: (doc.votes || 1) + 1,
+            last_voted: new Date().toISOString(),
+          });
+        } else {
+          // Create new vote record
+          await databases.createDocument(
+            databaseId,
+            iconVotesTableId,
+            ID.unique(),
+            {
+              merchant_key: merchantKey,
+              merchant_name: merchantName,
+              icon_url: iconUrl,
+              votes: 1,
+              last_voted: new Date().toISOString(),
+              ...(userId && { user_id: userId }),
+            },
+            [
+              Permission.read(Role.users()), // Anyone authenticated can read votes
+              Permission.update(Role.users()), // Anyone can update vote counts
+            ]
+          );
+        }
+      } catch (dbError) {
+        console.error('Error saving to icon votes database:', dbError);
+        // Fallback to AsyncStorage
+        const mappings = await getCrowdSourcedIcons();
+        mappings[merchantKey] = iconUrl;
+        await AsyncStorage.setItem(ICON_SUGGESTIONS_KEY, JSON.stringify(mappings));
+      }
+    } else {
+      // Fallback to AsyncStorage if database not configured
+      const mappings = await getCrowdSourcedIcons();
+      mappings[merchantKey] = iconUrl;
+      await AsyncStorage.setItem(ICON_SUGGESTIONS_KEY, JSON.stringify(mappings));
+    }
+  } catch (error) {
+    console.error('Error saving icon suggestion:', error);
+  }
+}
+
+/**
+ * Convert a domain or URL to the final icon URL
+ * If it's a direct URL (http/https), return as-is
+ * If it's a domain, convert to Google favicon URL
+ */
+function resolveIconUrl(input: string, size: number = 128): string {
+  // If it's already a direct URL, return as-is
+  if (input.startsWith('http://') || input.startsWith('https://')) {
+    return input;
+  }
+  
+  // Otherwise treat as domain and use Google favicon service
+  return `https://www.google.com/s2/favicons?domain=${input}&sz=${size}`;
+}
+
+/**
+ * Get the suggested icon URL for a merchant from crowd-sourced data
+ */
+export async function getSuggestedMerchantIcon(merchantName: string, size: number = 128): Promise<string | null> {
+  try {
+    const merchantKey = getMerchantKey(merchantName);
+    const suggestions = await getCrowdSourcedIcons();
+    
+    // Check exact match first
+    if (suggestions[merchantKey]) {
+      return resolveIconUrl(suggestions[merchantKey], size);
+    }
+    
+    // Check partial matches (similar to category matching)
+    const keys = Object.keys(suggestions);
+    for (const storedKey of keys) {
+      if (storedKey.length < 4) continue;
+      
+      if (merchantKey.includes(storedKey) || 
+          (merchantKey.length >= 5 && storedKey.includes(merchantKey))) {
+        return resolveIconUrl(suggestions[storedKey], size);
+      }
+    }
+    
+    return null;
+  } catch (error) {
+    console.error('Error getting suggested icon:', error);
+    return null;
+  }
+}
+
 // Common merchant name to domain mappings
 const merchantDomains: Record<string, string> = {
   // Supermarkets
@@ -9,7 +222,7 @@ const merchantDomains: Record<string, string> = {
   'sainsbury': 'sainsburys.co.uk',
   'sainsburys': 'sainsburys.co.uk',
   'asda': 'asda.com',
-  'aldi': 'aldi.com',
+  'aldi': 'aldi.ie',
   'lidl': 'lidl.com',
   'waitrose': 'waitrose.com',
   'morrisons': 'morrisons.com',
@@ -41,6 +254,7 @@ const merchantDomains: Record<string, string> = {
   'sprout & co': 'sproutfoodco.com',
   'póg tara street': 'ifancyapog.ie',
   'jc\'s takeaway': 'https://scontent-lga3-1.xx.fbcdn.net/v/t39.30808-1/300770167_497347769061736_5881899660955844192_n.png?stp=dst-png_s480x480&_nc_cat=111&ccb=1-7&_nc_sid=2d3e12&_nc_ohc=cMBRymZaZJUQ7kNvwGLX6x0&_nc_oc=AdnPY_FVMpJlJTqJHbtZEvpRXP8wJa7lZMBPZgBcZN9ohueIMZVtCm_xq_cVuL2HFGIYYa_VZLNPxVQcQHNUZGkr&_nc_zt=24&_nc_ht=scontent-lga3-1.xx&_nc_gid=kYvx8UkC_vko9_7RZhmqgw&oh=00_AfrmtNP5Rft4ts8v5d3UnX0NZA7Y87JFdQW53_ZpeXv3Xg&oe=6961ECA4',
+  'brew twenty one': 'https://scontent-zrh1-1.cdninstagram.com/v/t51.2885-19/449200254_1025451885976282_6567563999337065492_n.jpg?stp=dst-jpg_s320x320_tt6&efg=eyJ2ZW5jb2RlX3RhZyI6InByb2ZpbGVfcGljLmRqYW5nby44OTAuYzIifQ&_nc_ht=scontent-zrh1-1.cdninstagram.com&_nc_cat=110&_nc_oc=Q6cZ2QFklyiu1OtJ4vC72Ph6i0-eO8eTed4vWVBzY4xL_7sSivMRlRmkcbssxjWI-ia0CFQ&_nc_ohc=Edes-GrrwpgQ7kNvwFtVJRV&_nc_gid=6PmAaW2H6j4NV0zIMIWXxA&edm=AOQ1c0wBAAAA&ccb=7-5&oh=00_AfpWi5tk_PczYhxHNum3W64U6cPaFSD7-8vIP5s8Jew5HQ&oe=6976ACC7&_nc_sid=8b3546',
   
   // Transport
   'uber': 'uber.com',
@@ -52,6 +266,8 @@ const merchantDomains: Record<string, string> = {
   'easyjet': 'easyjet.com',
   'free now': 'free-now.com',
   'circle k gas station': 'circlek.com',
+  'transport for ireland - tfi': 'transportforireland.ie',
+  'dundrum car parking': 'dundrum.ie',
   
   // Streaming & Entertainment
   'netflix': 'netflix.com',
@@ -76,6 +292,8 @@ const merchantDomains: Record<string, string> = {
   'tiktok shop seller': 'tiktok.com',
   'ingredients.ie': 'https://ingredients.ie/static/logo.png',
   'bound apparel': 'boundonlineapparel.com',
+  'cois farraige': 'coisfarraigerobes.ie',
+  'ailínithe': 'ailinithe.ie',
   
   // Utilities & Services
   'vodafone': 'vodafone.com',
@@ -91,6 +309,7 @@ const merchantDomains: Record<string, string> = {
   'eir': 'eir.ie',
   'hetzner': 'hetzner.com',
   'google ads': 'ads.google.com',
+  'expo': 'expo.dev',
   
   // Gyms & Health
   'puregym': 'puregym.com',
@@ -110,6 +329,12 @@ const merchantDomains: Record<string, string> = {
   'natwest': 'natwest.com',
   'santander': 'santander.co.uk',
   'aib': 'aib.ie',
+
+  // Travel & Accommodation
+  'airbnb': 'airbnb.com',
+  'booking.com': 'booking.com',
+  'expedia': 'expedia.com',
+  'hotel hotelsone.com': 'hotelsone.com',
 };
 
 /**
@@ -196,8 +421,36 @@ export function getMerchantIconUrl(merchantName: string, size: number = 64, tldI
 }
 
 /**
+ * Get the merchant icon URL with crowd-sourced suggestions (async version)
+ * Checks crowd-sourced icon suggestions first, then falls back to built-in mappings
+ */
+export async function getMerchantIconUrlAsync(
+  merchantName: string,
+  size: number = 64,
+  tldIndex: number = 0
+): Promise<string | null> {
+  // First check crowd-sourced suggestions
+  const suggestedIcon = await getSuggestedMerchantIcon(merchantName);
+  if (suggestedIcon) {
+    return suggestedIcon;
+  }
+  
+  // Fall back to built-in mappings
+  return getMerchantIconUrl(merchantName, size, tldIndex);
+}
+
+/**
  * Check if a merchant has an icon available
  */
 export function hasMerchantIcon(merchantName: string): boolean {
+  return getMerchantDomain(merchantName) !== null;
+}
+
+/**
+ * Check if a merchant has an icon available (async version - includes crowd-sourced)
+ */
+export async function hasMerchantIconAsync(merchantName: string): Promise<boolean> {
+  const suggested = await getSuggestedMerchantIcon(merchantName);
+  if (suggested) return true;
   return getMerchantDomain(merchantName) !== null;
 }
