@@ -1,7 +1,7 @@
 import { databases } from "@/lib/appwrite";
 import { learnMerchantCategory } from "@/lib/categorization";
 import { formatCurrency } from "@/lib/currencyFunctions";
-import { getMerchantIconUrl } from "@/lib/merchantIcons";
+import { getMerchantIconUrl, getSuggestedMerchantIcon, suggestMerchantIcon } from "@/lib/merchantIcons";
 import { getQueuedTransactions } from "@/lib/syncQueue";
 import { useHomeStore } from "@/store/useHomeStore";
 import { useSessionStore } from "@/store/useSessionStore";
@@ -11,7 +11,7 @@ import { Feather } from "@expo/vector-icons";
 import AsyncStorage from "@react-native-async-storage/async-storage";
 import { router } from "expo-router";
 import { useEffect, useState } from "react";
-import { ActivityIndicator, Alert, FlatList, Image, Modal, Pressable, RefreshControl, ScrollView, Switch, Text, TextInput, View } from "react-native";
+import { ActivityIndicator, Alert, FlatList, Image, Keyboard, KeyboardAvoidingView, Modal, Platform, Pressable, RefreshControl, ScrollView, Switch, Text, TextInput, View } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
 
 // Map category names to default icons
@@ -80,6 +80,12 @@ export default function TransactionDetailScreen() {
   const [saving, setSaving] = useState(false);
   const [isQueuedTransaction, setIsQueuedTransaction] = useState(false);
   const [showCategoryDropdown, setShowCategoryDropdown] = useState(false);
+  const [showIconSuggestionModal, setShowIconSuggestionModal] = useState(false);
+  const [suggestedIconUrl, setSuggestedIconUrl] = useState("");
+  const [iconPreviewUrl, setIconPreviewUrl] = useState<string | null>(null);
+  const [savingIconSuggestion, setSavingIconSuggestion] = useState(false);
+  const [crowdSourcedIconUrl, setCrowdSourcedIconUrl] = useState<string | null>(null);
+  const [crowdSourcedIconFailed, setCrowdSourcedIconFailed] = useState(false);
   const [tldIndex, setTldIndex] = useState(0);
   const [iconFailed, setIconFailed] = useState(false);
   const [refreshing, setRefreshing] = useState(false);
@@ -208,11 +214,24 @@ export default function TransactionDetailScreen() {
       // Reset icon state so we re-attempt fetching favicon on refresh
       setIconFailed(false);
       setTldIndex(0);
+      setCrowdSourcedIconUrl(null);
       await loadTransaction();
     } finally {
       setRefreshing(false);
     }
   };
+
+  // Load crowd-sourced icon URL when transaction changes
+  useEffect(() => {
+    const loadCrowdSourcedIcon = async () => {
+      if (transaction?.title) {
+        const suggestedUrl = await getSuggestedMerchantIcon(transaction.displayName || transaction.title);
+        setCrowdSourcedIconUrl(suggestedUrl);
+        setCrowdSourcedIconFailed(false); // Reset failed state when URL changes
+      }
+    };
+    loadCrowdSourcedIcon();
+  }, [transaction?.title, transaction?.displayName]);
 
   const handleOpenMatchedTransfer = () => {
     const targetId = transaction?.matchedTransferId;
@@ -459,6 +478,95 @@ export default function TransactionDetailScreen() {
     }
   };
 
+  const handleOpenIconSuggestionModal = () => {
+    setSuggestedIconUrl("");
+    setIconPreviewUrl(null);
+    setShowIconSuggestionModal(true);
+  };
+
+  // Check if input looks like a domain (e.g., "example.com")
+  const isDomainFormat = (input: string): boolean => {
+    const domainPattern = /^[a-z0-9-]+(\.[a-z0-9-]+)+$/i;
+    return domainPattern.test(input) && !input.startsWith('http');
+  };
+
+  // Convert input to preview URL (handles both domain and direct URL)
+  const getPreviewUrl = (input: string): string => {
+    if (input.startsWith('http://') || input.startsWith('https://')) {
+      return input;
+    }
+    // Treat as domain and use Google favicon
+    return `https://www.google.com/s2/favicons?domain=${input}&sz=128`;
+  };
+
+  const handlePreviewIconUrl = () => {
+    const input = suggestedIconUrl.trim();
+    if (!input) {
+      setIconPreviewUrl(null);
+      return;
+    }
+    
+    // Accept either domain format or full URL
+    if (!input.startsWith('http://') && !input.startsWith('https://') && !isDomainFormat(input)) {
+      Alert.alert("Invalid Input", "Please enter a valid domain (e.g., example.com) or full URL (https://...)");
+      return;
+    }
+    
+    setIconPreviewUrl(getPreviewUrl(input));
+  };
+
+  const handleSubmitIconSuggestion = async () => {
+    if (!transaction || !user?.id) return;
+    
+    const input = suggestedIconUrl.trim();
+    if (!input) {
+      Alert.alert("No Input", "Please enter a domain or icon URL to suggest.");
+      return;
+    }
+    
+    // Accept either domain format or full URL
+    if (!input.startsWith('http://') && !input.startsWith('https://') && !isDomainFormat(input)) {
+      Alert.alert("Invalid Input", "Please enter a valid domain (e.g., example.com) or full URL (https://...)");
+      return;
+    }
+    
+    try {
+      setSavingIconSuggestion(true);
+      
+      // Submit the icon suggestion (store the raw input - domain or URL)
+      await suggestMerchantIcon(
+        transaction.displayName || transaction.title,
+        input,
+        user.id
+      );
+      
+      // Also submit for the original title if different
+      if (transaction.displayName && transaction.displayName !== transaction.title) {
+        await suggestMerchantIcon(transaction.title, input, user.id);
+      }
+      
+      // Update local state to show the new icon (use resolved URL for display)
+      setCrowdSourcedIconUrl(getPreviewUrl(input));
+      setIconFailed(false);
+      setTldIndex(0);
+      
+      Alert.alert(
+        "Thank you!",
+        "Your icon suggestion has been submitted. It will help other users see the right icon for this merchant.",
+        [{ text: "OK" }]
+      );
+      
+      setShowIconSuggestionModal(false);
+      setSuggestedIconUrl("");
+      setIconPreviewUrl(null);
+    } catch (error) {
+      console.error("Failed to submit icon suggestion:", error);
+      Alert.alert("Error", "Failed to submit your suggestion. Please try again.");
+    } finally {
+      setSavingIconSuggestion(false);
+    }
+  };
+
   if (loading) {
     return (
       <SafeAreaView className="flex-1 bg-white items-center justify-center">
@@ -534,6 +642,7 @@ export default function TransactionDetailScreen() {
                   placeholder="0.00"
                   keyboardType="decimal-pad"
                   className="text-4xl font-bold text-dark-100 border-b-2 border-primary pb-2"
+                  style={{ paddingVertical: 0 }}
                 />
               ) : (
                 <Text
@@ -551,7 +660,11 @@ export default function TransactionDetailScreen() {
             {/* Merchant Icon */}
             {transaction && (() => {
               const shouldHideMerchantIcon = transaction.hideMerchantIcon || false;
-              const baseIconUrl = (shouldHideMerchantIcon || iconFailed) ? null : getMerchantIconUrl(transaction.displayName || transaction.title, 128, tldIndex);
+              // Prioritize crowd-sourced icon (if not failed), then fall back to built-in mappings
+              const builtInIconUrl = (shouldHideMerchantIcon || iconFailed) ? null : getMerchantIconUrl(transaction.displayName || transaction.title, 128, tldIndex);
+              // Crowd-sourced icon overrides hideMerchantIcon setting (user explicitly suggested it), but falls back if it failed
+              const effectiveCrowdSourcedUrl = (crowdSourcedIconUrl && !crowdSourcedIconFailed) ? crowdSourcedIconUrl : null;
+              const baseIconUrl = effectiveCrowdSourcedUrl || ((shouldHideMerchantIcon || iconFailed) ? null : builtInIconUrl);
               const titleKey = (transaction.title || "").toLowerCase();
               const isRevolutTransfer =
                 (transaction.source === "revolut_import") &&
@@ -560,6 +673,7 @@ export default function TransactionDetailScreen() {
               const hasMerchantIcon = merchantIconUrl !== null;
               const isIncome = transaction.kind === "income";
               const iconBackgroundColor = hasMerchantIcon ? "#FFFFFF" : (isIncome ? "#2F9B6520" : "#F1414120");
+              const isCrowdSourced = effectiveCrowdSourcedUrl && baseIconUrl === effectiveCrowdSourcedUrl;
               
               const getCategoryIcon = (name?: string) => {
                 const key = (name || "").toLowerCase();
@@ -578,6 +692,12 @@ export default function TransactionDetailScreen() {
               };
               
               const handleImageError = () => {
+                // If this is a crowd-sourced icon, mark it as failed so we fall back to category icon
+                if (isCrowdSourced) {
+                  setCrowdSourcedIconFailed(true);
+                  return;
+                }
+                // For built-in favicons, try other TLDs before falling back
                 if (tldIndex < 2) {
                   setTldIndex(tldIndex + 1);
                   return;
@@ -587,17 +707,26 @@ export default function TransactionDetailScreen() {
 
               const handleIconPress = () => {
                 if (hasMerchantIcon && merchantIconUrl) {
-                  const tlds = ['ie', 'com', 'co.uk'];
+                  const sourceInfo = isCrowdSourced 
+                    ? "User-suggested" 
+                    : "Auto-detected";
+                  
                   Alert.alert(
-                    "Merchant Icon Source",
-                    `Favicon from Google\n\nURL: ${merchantIconUrl}${baseIconUrl ? `\n\nTLD attempt: .${tlds[tldIndex]}` : ''}`,
-                    [{ text: "OK" }]
+                    "Merchant Icon",
+                    `${sourceInfo}\n\nTap below to suggest a different icon for this merchant.`,
+                    [
+                      { text: "Suggest Icon", onPress: handleOpenIconSuggestionModal },
+                      { text: "Done", style: "cancel" }
+                    ]
                   );
                 } else {
                   Alert.alert(
-                    "Category Icon",
-                    `Fallback category icon\n\nCategory: ${category?.name || "Uncategorized"}\n\nNo merchant favicon found after trying .ie, .com, and .co.uk domains.`,
-                    [{ text: "OK" }]
+                    "No Icon Found",
+                    `Showing category icon for ${category?.name || "Uncategorized"}.\n\nWould you like to suggest an icon for this merchant?`,
+                    [
+                      { text: "Suggest Icon", onPress: handleOpenIconSuggestionModal },
+                      { text: "Cancel", style: "cancel" }
+                    ]
                   );
                 }
               };
@@ -641,6 +770,7 @@ export default function TransactionDetailScreen() {
               onChangeText={setEditedDisplayName}
               placeholder="How this transaction appears"
               className="text-base text-dark-100 border-b-2 border-primary pb-2 mb-2"
+              style={{ paddingVertical: 0 }}
             />
           ) : (
             <Text className="text-base font-semibold text-dark-100">{transaction.displayName || transaction.title}</Text>
@@ -901,6 +1031,106 @@ export default function TransactionDetailScreen() {
             />
           </View>
         </View>
+      </Modal>
+
+      {/* Icon Suggestion Modal */}
+      <Modal
+        visible={showIconSuggestionModal}
+        transparent
+        animationType="slide"
+        onRequestClose={() => setShowIconSuggestionModal(false)}
+      >
+        <KeyboardAvoidingView 
+          behavior={Platform.OS === "ios" ? "padding" : "height"}
+          className="flex-1"
+        >
+          <Pressable 
+            className="flex-1 bg-black/50 justify-end"
+            onPress={() => {
+              Keyboard.dismiss();
+              setShowIconSuggestionModal(false);
+            }}
+          >
+            <Pressable onPress={() => {}} className="bg-white rounded-t-3xl">
+              {/* Header */}
+              <View className="px-5 pt-4 pb-2 border-b border-gray-200 flex-row items-center justify-between">
+                <Text className="text-lg font-bold text-dark-100">Suggest Icon URL</Text>
+                <Pressable
+                  onPress={() => setShowIconSuggestionModal(false)}
+                  className="p-2 active:opacity-70"
+                >
+                  <Feather name="x" size={24} color="#181C2E" />
+                </Pressable>
+              </View>
+
+              {/* Content */}
+              <ScrollView className="px-5 py-4" keyboardShouldPersistTaps="handled">
+                <Text className="text-gray-600 text-sm mb-4">
+                  Suggest an icon URL for "{transaction?.displayName || transaction?.title}". 
+                  This will help other users see the correct icon for this merchant.
+                </Text>
+
+                {/* URL Input */}
+                <Text className="text-gray-500 text-sm mb-2">Domain or Image URL</Text>
+                <View className="flex-row items-center gap-2 mb-4">
+                  <TextInput
+                    value={suggestedIconUrl}
+                    onChangeText={setSuggestedIconUrl}
+                    placeholder="example.com or https://example.com/logo.png"
+                    autoCapitalize="none"
+                    autoCorrect={false}
+                    keyboardType="url"
+                    className="flex-1 bg-gray-50 rounded-xl px-4 text-base text-dark-100 border border-gray-200"
+                    style={{ height: 48, paddingTop: 0, paddingBottom: 0 }}
+                  />
+                  <Pressable
+                    onPress={handlePreviewIconUrl}
+                    className="bg-gray-100 rounded-xl px-4 py-3 active:opacity-70"
+                  >
+                    <Feather name="eye" size={20} color="#6B7280" />
+                  </Pressable>
+                </View>
+
+                {/* Preview */}
+                {iconPreviewUrl && (
+                  <View className="mb-4 items-center">
+                    <Text className="text-gray-500 text-sm mb-2">Preview</Text>
+                    <View className="w-20 h-20 rounded-full items-center justify-center bg-white border-2 border-gray-200">
+                      <Image
+                        source={{ uri: iconPreviewUrl }}
+                        style={{ width: 64, height: 64, borderRadius: 32 }}
+                        resizeMode="contain"
+                        onError={() => {
+                          Alert.alert("Preview Failed", "Could not load the image from this URL. Please check the URL and try again.");
+                          setIconPreviewUrl(null);
+                        }}
+                      />
+                    </View>
+                  </View>
+                )}
+
+                {/* Tips */}
+                <View className="bg-blue-50 rounded-xl p-3 mb-4">
+                  <Text className="text-blue-800 text-xs font-medium mb-1">Two ways to suggest an icon:</Text>
+                  <Text className="text-blue-700 text-xs">• <Text className="font-semibold">Domain:</Text> Enter "example.com" (must have a favicon set up)</Text>
+                  <Text className="text-blue-700 text-xs">• <Text className="font-semibold">Direct URL:</Text> Paste a full image URL (more reliable)</Text>
+                  <Text className="text-blue-700 text-xs mt-1">• If domain shows blank, try a direct image URL instead</Text>
+                </View>
+                <Pressable
+                  onPress={handleSubmitIconSuggestion}
+                  disabled={savingIconSuggestion || !suggestedIconUrl.trim()}
+                  className="bg-primary rounded-2xl py-4 items-center active:opacity-70 disabled:opacity-50 mb-4"
+                >
+                  {savingIconSuggestion ? (
+                    <ActivityIndicator color="white" />
+                  ) : (
+                    <Text className="text-white font-semibold">Submit Suggestion</Text>
+                  )}
+                </Pressable>
+              </ScrollView>
+            </Pressable>
+          </Pressable>
+        </KeyboardAvoidingView>
       </Modal>
     </SafeAreaView>
   );

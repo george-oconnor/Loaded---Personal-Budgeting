@@ -1,8 +1,8 @@
 import { formatCurrency } from "@/lib/currencyFunctions";
-import { getMerchantIconUrl } from "@/lib/merchantIcons";
+import { getMerchantIconUrl, getSuggestedMerchantIcon } from "@/lib/merchantIcons";
 import type { Transaction } from "@/types/type";
 import { Feather } from "@expo/vector-icons";
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { Image, Text, View } from "react-native";
 
 export default function TransactionRow({
@@ -20,14 +20,34 @@ export default function TransactionRow({
     : isIncome ? "text-green-600" : "text-red-500";
   const [tldIndex, setTldIndex] = useState(0);
   const [iconFailed, setIconFailed] = useState(false);
+  const [crowdSourcedIconUrl, setCrowdSourcedIconUrl] = useState<string | null>(null);
+  const [crowdSourcedIconFailed, setCrowdSourcedIconFailed] = useState(false);
   const titleKey = (transaction.title || "").toLowerCase();
   const isRevolutTransfer =
     (transaction.source === "revolut_import") &&
     (titleKey.includes("to pocket") || titleKey.includes("transfer to") || titleKey.includes("transfer from"));
   const shouldHideMerchantIcon = transaction.hideMerchantIcon || false;
-  const merchantIconUrl = (shouldHideMerchantIcon || iconFailed)
+
+  // Load crowd-sourced icon suggestion
+  useEffect(() => {
+    const merchantName = transaction.displayName || transaction.title;
+    if (merchantName) {
+      getSuggestedMerchantIcon(merchantName, 64)
+        .then(url => {
+          setCrowdSourcedIconUrl(url);
+          setCrowdSourcedIconFailed(false);
+        })
+        .catch(() => setCrowdSourcedIconUrl(null));
+    }
+  }, [transaction.displayName, transaction.title]);
+
+  // Built-in icon (fallback)
+  const builtInIconUrl = (shouldHideMerchantIcon || iconFailed)
     ? null
     : (isRevolutTransfer ? `https://www.google.com/s2/favicons?domain=revolut.com&sz=64` : getMerchantIconUrl(transaction.title, 64, tldIndex));
+  // Prioritize crowd-sourced icon (if not failed), then fall back to built-in
+  const effectiveCrowdSourcedUrl = (crowdSourcedIconUrl && !crowdSourcedIconFailed) ? crowdSourcedIconUrl : null;
+  const merchantIconUrl = effectiveCrowdSourcedUrl || ((shouldHideMerchantIcon || iconFailed) ? null : builtInIconUrl);
 
   const getCategoryIcon = (categoryName?: string) => {
     const key = (categoryName || "").toLowerCase();
@@ -69,7 +89,14 @@ export default function TransactionRow({
     return "dollar-sign";
   };
   
+  const isCrowdSourced = effectiveCrowdSourcedUrl && merchantIconUrl === effectiveCrowdSourcedUrl;
+
   const handleImageError = () => {
+    // If this is a crowd-sourced icon, mark it as failed so we fall back
+    if (isCrowdSourced) {
+      setCrowdSourcedIconFailed(true);
+      return;
+    }
     // Try next TLD (ie -> com -> co.uk)
     if (tldIndex < 2) {
       setTldIndex(tldIndex + 1);

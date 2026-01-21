@@ -1,8 +1,8 @@
 import { formatCurrency } from "@/lib/currencyFunctions";
-import { getMerchantIconUrl } from "@/lib/merchantIcons";
+import { getMerchantIconUrl, getSuggestedMerchantIcon } from "@/lib/merchantIcons";
 import type { Transaction } from "@/types/type";
 import { Feather } from "@expo/vector-icons";
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { Image, Pressable, Text, View } from "react-native";
 
 export default function TransactionListItem({
@@ -19,8 +19,28 @@ export default function TransactionListItem({
   const isIncome = transaction.kind === "income";
   const [tldIndex, setTldIndex] = useState(0);
   const [iconFailed, setIconFailed] = useState(false);
+  const [crowdSourcedIconUrl, setCrowdSourcedIconUrl] = useState<string | null>(null);
+  const [crowdSourcedIconFailed, setCrowdSourcedIconFailed] = useState(false);
   const shouldHideMerchantIcon = transaction.hideMerchantIcon || false;
-  const rawMerchantIconUrl = (shouldHideMerchantIcon || iconFailed) ? null : getMerchantIconUrl(transaction.displayName || transaction.title, 64, tldIndex);
+
+  // Load crowd-sourced icon suggestion
+  useEffect(() => {
+    const merchantName = transaction.displayName || transaction.title;
+    if (merchantName) {
+      getSuggestedMerchantIcon(merchantName, 64)
+        .then(url => {
+          setCrowdSourcedIconUrl(url);
+          setCrowdSourcedIconFailed(false);
+        })
+        .catch(() => setCrowdSourcedIconUrl(null));
+    }
+  }, [transaction.displayName, transaction.title]);
+
+  // Built-in icon (fallback)
+  const builtInIconUrl = (shouldHideMerchantIcon || iconFailed) ? null : getMerchantIconUrl(transaction.displayName || transaction.title, 64, tldIndex);
+  // Prioritize crowd-sourced icon (if not failed), then fall back to built-in
+  const effectiveCrowdSourcedUrl = (crowdSourcedIconUrl && !crowdSourcedIconFailed) ? crowdSourcedIconUrl : null;
+  const rawMerchantIconUrl = effectiveCrowdSourcedUrl || ((shouldHideMerchantIcon || iconFailed) ? null : builtInIconUrl);
   // Revolut-specific fallback: for transfers "To pocket" or "Transfer to" from Revolut imports
   const titleKey = (transaction.title || "").toLowerCase();
   const isRevolutTransfer =
@@ -33,7 +53,15 @@ export default function TransactionListItem({
 
   const iconBackgroundColor = hasMerchantIcon ? "#FFFFFF" : `${getTransactionColor(transaction.kind)}20`;
 
+  const isCrowdSourced = effectiveCrowdSourcedUrl && rawMerchantIconUrl === effectiveCrowdSourcedUrl;
+
   const handleImageError = () => {
+    // If this is a crowd-sourced icon, mark it as failed so we fall back
+    if (isCrowdSourced) {
+      setCrowdSourcedIconFailed(true);
+      return;
+    }
+    // For built-in favicons, try other TLDs before falling back
     if (tldIndex < 2) {
       setTldIndex(tldIndex + 1);
       return;
