@@ -46,6 +46,7 @@ export default function LoginScreen() {
                   autoComplete="email"
                   editable={!loading}
                   className="px-4 py-3 rounded-2xl bg-white border border-gray-200 text-dark-100"
+                  style={{ paddingVertical: 12 }}
                 />
               </View>
 
@@ -65,6 +66,7 @@ export default function LoginScreen() {
                   autoComplete="password"
                   editable={!loading}
                   className="px-4 py-3 rounded-2xl bg-white border border-gray-200 text-dark-100"
+                  style={{ paddingVertical: 12 }}
                 />
               </View>
             </View>

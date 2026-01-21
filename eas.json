@@ -5,24 +5,39 @@
   },
   "build": {
     "preview": {
+      "env": {
+        "EXPO_PUBLIC_APPWRITE_TABLE_ICON_VOTES": "icon_votes"
+      },
       "ios": {
         "simulator": true
       }
     },
     "preview2": {
+      "env": {
+        "EXPO_PUBLIC_APPWRITE_TABLE_ICON_VOTES": "icon_votes"
+      },
       "android": {
         "gradleCommand": ":app:assembleRelease"
       }
     },
     "preview3": {
+      "env": {
+        "EXPO_PUBLIC_APPWRITE_TABLE_ICON_VOTES": "icon_votes"
+      },
       "developmentClient": true
     },
     "production": {
+      "env": {
+        "EXPO_PUBLIC_APPWRITE_TABLE_ICON_VOTES": "icon_votes"
+      },
       "ios": {
         "resourceClass": "medium"
       }
     },
     "testflight": {
+      "env": {
+        "EXPO_PUBLIC_APPWRITE_TABLE_ICON_VOTES": "icon_votes"
+      },
       "ios": {
         "resourceClass": "medium"
       },

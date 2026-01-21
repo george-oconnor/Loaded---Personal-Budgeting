@@ -99,6 +99,7 @@ export default function ResetPasswordScreen() {
                   autoCapitalize="none"
                   editable={!loading}
                   className="px-4 py-3 rounded-2xl bg-white border border-gray-200 text-dark-100"
+                  style={{ paddingVertical: 12 }}
                 />
               </View>
 
@@ -111,6 +112,7 @@ export default function ResetPasswordScreen() {
                   autoCapitalize="none"
                   editable={!loading}
                   className="px-4 py-3 rounded-2xl bg-white border border-gray-200 text-dark-100"
+                  style={{ paddingVertical: 12 }}
                 />
               </View>
 
@@ -125,6 +127,7 @@ export default function ResetPasswordScreen() {
                   autoComplete="password-new"
                   editable={!loading}
                   className="px-4 py-3 rounded-2xl bg-white border border-gray-200 text-dark-100"
+                  style={{ paddingVertical: 12 }}
                 />
               </View>
 
@@ -138,6 +141,7 @@ export default function ResetPasswordScreen() {
                   autoCapitalize="none"
                   autoComplete="password-new"
                   editable={!loading}
+                  style={{ paddingVertical: 12 }}
                   className="px-4 py-3 rounded-2xl bg-white border border-gray-200 text-dark-100"
                 />
               </View>

@@ -119,7 +119,7 @@ export default function SelectAccountScreen() {
                   placeholder="e.g., AIB Current Account"
                   placeholderTextColor="#9CA3AF"
                   multiline={false}
-                  style={{ minHeight: 48, lineHeight: 24 }}
+                  style={{ minHeight: 48, lineHeight: 24, paddingVertical: 12 }}
                   className="bg-white border border-gray-300 rounded-xl px-4 py-3 text-base font-normal"
                 />
               </View>
