@@ -392,37 +392,60 @@ export async function scheduleBudgetNotification(
  * Schedules multiple times per day for better awareness
  */
 export async function scheduleDailyBudgetCheck(): Promise<string[]> {
-  const notificationTimes = [
-    { hour: 12, minute: 0, label: 'midday' },   // Noon check
-    { hour: 18, minute: 0, label: 'evening' },  // 6 PM check
-    { hour: 21, minute: 0, label: 'night' },    // 9 PM final check
-  ];
-
   const scheduledIds: string[] = [];
 
-  for (const time of notificationTimes) {
-    const id = `daily-budget-check-${time.label}`;
-    
-    const trigger: Notifications.DailyTriggerInput = {
-      type: Notifications.SchedulableTriggerInputTypes.DAILY,
-      hour: time.hour,
-      minute: time.minute,
+  const now = new Date();
+  const daysToSchedule = 7;
+  const minHour = 10; // 10:00 local
+  const maxHour = 21; // 21:59 local
+
+  // Cancel previously scheduled daily checks to avoid duplicates
+  try {
+    const existing = await getScheduledNotifications();
+    for (const n of existing) {
+      if (typeof n.identifier === 'string' && n.identifier.startsWith('daily-budget-check-')) {
+        await Notifications.cancelScheduledNotificationAsync(n.identifier).catch(() => {});
+        await removeTrackedNotification(n.identifier).catch(() => {});
+      }
+    }
+  } catch {}
+
+  for (let i = 0; i < daysToSchedule; i++) {
+    const target = new Date(now);
+    target.setDate(target.getDate() + i);
+    const hour = Math.floor(Math.random() * (maxHour - minHour + 1)) + minHour;
+    const minute = Math.floor(Math.random() * 60);
+    const second = Math.floor(Math.random() * 60);
+    target.setHours(hour, minute, second, 0);
+
+    // If target is in the past for today, shift to next day
+    if (target.getTime() <= Date.now()) {
+      target.setDate(target.getDate() + 1);
+    }
+
+    const id = `daily-budget-check-${target.getFullYear()}${String(target.getMonth() + 1).padStart(2, '0')}${String(target.getDate()).padStart(2, '0')}`;
+
+    const trigger: Notifications.CalendarTriggerInput = {
+      type: Notifications.SchedulableTriggerInputTypes.CALENDAR,
+      year: target.getFullYear(),
+      month: target.getMonth() + 1,
+      day: target.getDate(),
+      hour,
+      minute,
+      second,
+      repeats: false,
     };
 
-    const body = time.hour === 21 
-      ? 'End of day budget review - see how you did today'
-      : time.hour === 18
-      ? 'Evening budget check - stay on track for the rest of the day'
-      : 'Lunchtime budget check - see your spending so far';
+    const body = 'Daily budget check – keep your spending on track';
 
     const notificationId = await scheduleNotification(
       id,
       '📊 Budget Check',
       body,
       trigger,
-      { type: 'daily_check', timeOfDay: time.label }
+      { type: 'daily_check' }
     );
-    
+
     if (notificationId) {
       scheduledIds.push(notificationId);
     }
@@ -437,42 +460,74 @@ export async function scheduleDailyBudgetCheck(): Promise<string[]> {
  */
 export async function scheduleWeeklyImportReminder(): Promise<string[]> {
   const scheduledIds: string[] = [];
-  
-  // Sunday evening reminder
-  const sundayTrigger: Notifications.WeeklyTriggerInput = {
-    type: Notifications.SchedulableTriggerInputTypes.WEEKLY,
-    weekday: 1, // Sunday
-    hour: 18,
-    minute: 0,
-  };
 
-  const sundayId = await scheduleNotification(
-    NOTIFICATION_IDS.IMPORT_REMINDER + '-sunday',
-    '📥 Weekend Import Reminder',
-    'Start the week fresh! Import your latest transactions to keep your budget accurate.',
-    sundayTrigger,
-    { type: 'import_reminder', day: 'sunday' }
-  );
+  // Cancel previously scheduled weekly import reminders to avoid fixed-time repeats
+  try {
+    const existing = await getScheduledNotifications();
+    for (const n of existing) {
+      if (typeof n.identifier === 'string' && n.identifier.startsWith(NOTIFICATION_IDS.IMPORT_REMINDER)) {
+        await Notifications.cancelScheduledNotificationAsync(n.identifier).catch(() => {});
+        await removeTrackedNotification(n.identifier).catch(() => {});
+      }
+    }
+  } catch {}
 
-  if (sundayId) scheduledIds.push(sundayId);
+  const weeksToSchedule = 8; // schedule randomness for upcoming 8 weeks
+  const minHour = 17; // evening window
+  const maxHour = 21;
 
-  // Wednesday evening reminder (mid-week check-in)
-  const wednesdayTrigger: Notifications.WeeklyTriggerInput = {
-    type: Notifications.SchedulableTriggerInputTypes.WEEKLY,
-    weekday: 4, // Wednesday
-    hour: 19,
-    minute: 0,
-  };
+  const start = new Date();
 
-  const wednesdayId = await scheduleNotification(
-    NOTIFICATION_IDS.IMPORT_REMINDER + '-wednesday',
-    '📊 Mid-Week Import Check',
-    'Time for a mid-week update! Import your recent transactions to stay on top of your budget.',
-    wednesdayTrigger,
-    { type: 'import_reminder', day: 'wednesday' }
-  );
+  function getNextWeekday(from: Date, weekday: number): Date {
+    const d = new Date(from);
+    const currentWeekday = d.getDay(); // 0=Sun..6=Sat
+    let diff = (weekday - currentWeekday + 7) % 7;
+    if (diff === 0) diff = 7; // always next occurrence
+    d.setDate(d.getDate() + diff);
+    return d;
+  }
 
-  if (wednesdayId) scheduledIds.push(wednesdayId);
+  for (let w = 0; w < weeksToSchedule; w++) {
+    const base = new Date(start);
+    base.setDate(base.getDate() + w * 7);
+
+    const targets = [
+      { label: 'sunday', weekday: 0, title: '📥 Weekend Import Reminder', body: 'Start the week fresh! Import your latest transactions to keep your budget accurate.' },
+      { label: 'wednesday', weekday: 3, title: '📊 Mid-Week Import Check', body: 'Time for a mid-week update! Import your recent transactions to stay on top of your budget.' },
+    ];
+
+    for (const t of targets) {
+      const day = getNextWeekday(base, t.weekday);
+      const hour = Math.floor(Math.random() * (maxHour - minHour + 1)) + minHour;
+      const minute = Math.floor(Math.random() * 60);
+      const second = Math.floor(Math.random() * 60);
+      day.setHours(hour, minute, second, 0);
+
+      const weekId = `${day.getFullYear()}W${String(Math.floor((day.getDate() - 1) / 7) + 1).padStart(2, '0')}`;
+      const id = `${NOTIFICATION_IDS.IMPORT_REMINDER}-${t.label}-${weekId}`;
+
+      const trigger: Notifications.CalendarTriggerInput = {
+        type: Notifications.SchedulableTriggerInputTypes.CALENDAR,
+        year: day.getFullYear(),
+        month: day.getMonth() + 1,
+        day: day.getDate(),
+        hour,
+        minute,
+        second,
+        repeats: false,
+      };
+
+      const notificationId = await scheduleNotification(
+        id,
+        t.title,
+        t.body,
+        trigger,
+        { type: 'import_reminder', day: t.label }
+      );
+
+      if (notificationId) scheduledIds.push(notificationId);
+    }
+  }
 
   return scheduledIds;
 }
