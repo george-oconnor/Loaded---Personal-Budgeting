@@ -47,6 +47,7 @@ export default function SignupScreen() {
                   autoComplete="name-given"
                   editable={!loading}
                   className="px-4 py-3 rounded-2xl bg-white border border-gray-200 text-dark-100"
+                  style={{ paddingVertical: 12 }}
                 />
               </View>
 
@@ -60,6 +61,7 @@ export default function SignupScreen() {
                   autoComplete="name-family"
                   editable={!loading}
                   className="px-4 py-3 rounded-2xl bg-white border border-gray-200 text-dark-100"
+                  style={{ paddingVertical: 12 }}
                 />
               </View>
 
@@ -74,6 +76,7 @@ export default function SignupScreen() {
                   autoComplete="email"
                   editable={!loading}
                   className="px-4 py-3 rounded-2xl bg-white border border-gray-200 text-dark-100"
+                  style={{ paddingVertical: 12 }}
                 />
               </View>
 
@@ -88,6 +91,7 @@ export default function SignupScreen() {
                   autoComplete="password-new"
                   editable={!loading}
                   className="px-4 py-3 rounded-2xl bg-white border border-gray-200 text-dark-100"
+                  style={{ paddingVertical: 12 }}
                 />
               </View>
             </View>

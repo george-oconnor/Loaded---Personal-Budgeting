@@ -197,6 +197,7 @@ export default function AddTransactionScreen() {
               placeholder="e.g., Groceries, Salary"
               className="px-4 py-3 rounded-2xl bg-white border border-gray-200 text-dark-100"
               editable={!loading}
+              style={{ paddingVertical: 12 }}
             />
           </View>
 
@@ -212,6 +213,7 @@ export default function AddTransactionScreen() {
               keyboardType="decimal-pad"
               className="px-4 py-3 rounded-2xl bg-white border border-gray-200 text-dark-100"
               editable={!loading}
+              style={{ paddingVertical: 12 }}
             />
           </View>
 
@@ -226,6 +228,7 @@ export default function AddTransactionScreen() {
               placeholder="YYYY-MM-DD"
               className="px-4 py-3 rounded-2xl bg-white border border-gray-200 text-dark-100"
               editable={!loading}
+              style={{ paddingVertical: 12 }}
             />
             <Text className="text-xs text-gray-500 mt-1">
               Format: YYYY-MM-DD (e.g., 2025-12-25)
@@ -243,6 +246,7 @@ export default function AddTransactionScreen() {
               placeholder="HH:MM"
               className="px-4 py-3 rounded-2xl bg-white border border-gray-200 text-dark-100"
               editable={!loading}
+              style={{ paddingVertical: 12 }}
             />
             <Text className="text-xs text-gray-500 mt-1">
               Format: HH:MM (e.g., 14:30)

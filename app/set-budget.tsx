@@ -245,6 +245,7 @@ export default function SetBudgetScreen() {
                 className={`flex-1 border-b-2 border-primary px-2 py-2 text-2xl font-bold text-dark-100 ${
                   budgetMode === "manual" ? "" : "opacity-50"
                 }`}
+                style={{ paddingVertical: 8 }}
               />
             </View>
             <Text className="text-xs text-gray-400 mt-2">
@@ -346,6 +347,7 @@ export default function SetBudgetScreen() {
                   keyboardType="number-pad"
                   maxLength={2}
                   className="flex-1 border border-blue-300 rounded-lg px-3 py-2 text-center text-sm"
+                  style={{ paddingVertical: 8 }}
                 />
                 <Text className="text-sm text-blue-900">(1-31)</Text>
               </View>
