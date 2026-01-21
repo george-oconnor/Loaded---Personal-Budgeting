@@ -133,6 +133,14 @@ TaskManager.defineTask(BACKGROUND_DELETE_TASK, async () => {
  */
 export async function registerBackgroundSyncTask(): Promise<void> {
   try {
+    // Check if background fetch is available (not available in Expo Go)
+    const status = await BackgroundFetch.getStatusAsync();
+    if (status === BackgroundFetch.BackgroundFetchStatus.Restricted || 
+        status === BackgroundFetch.BackgroundFetchStatus.Denied) {
+      console.log('[Background] Background fetch not available (likely Expo Go)');
+      return;
+    }
+
     const isRegistered = await TaskManager.isTaskRegisteredAsync(BACKGROUND_SYNC_TASK);
     
     if (isRegistered) {
@@ -149,6 +157,13 @@ export async function registerBackgroundSyncTask(): Promise<void> {
     console.log('[Background] Sync task registered successfully');
     addBreadcrumb({ message: 'Background sync task registered', category: 'background_task' });
   } catch (error) {
+    // Silently handle in Expo Go - background fetch isn't available
+    const errorMsg = String(error);
+    if (errorMsg.includes('Background Fetch has not been configured') || 
+        errorMsg.includes('UIBackgroundModes')) {
+      console.log('[Background] Sync task skipped (Expo Go or missing native config)');
+      return;
+    }
     console.error('[Background] Failed to register sync task:', error);
     captureException(error instanceof Error ? error : new Error(String(error)), {
       tags: { feature: 'background_sync', operation: 'register_task' }
@@ -162,6 +177,14 @@ export async function registerBackgroundSyncTask(): Promise<void> {
  */
 export async function registerBackgroundDeleteTask(): Promise<void> {
   try {
+    // Check if background fetch is available (not available in Expo Go)
+    const status = await BackgroundFetch.getStatusAsync();
+    if (status === BackgroundFetch.BackgroundFetchStatus.Restricted || 
+        status === BackgroundFetch.BackgroundFetchStatus.Denied) {
+      console.log('[Background] Background fetch not available for delete task');
+      return;
+    }
+
     const isRegistered = await TaskManager.isTaskRegisteredAsync(BACKGROUND_DELETE_TASK);
     
     if (isRegistered) {
@@ -178,6 +201,13 @@ export async function registerBackgroundDeleteTask(): Promise<void> {
     console.log('[Background] Delete task registered successfully');
     addBreadcrumb({ message: 'Background delete task registered', category: 'background_task' });
   } catch (error) {
+    // Silently handle in Expo Go - background fetch isn't available
+    const errorMsg = String(error);
+    if (errorMsg.includes('Background Fetch has not been configured') || 
+        errorMsg.includes('UIBackgroundModes')) {
+      console.log('[Background] Delete task skipped (Expo Go or missing native config)');
+      return;
+    }
     console.error('[Background] Failed to register delete task:', error);
     captureException(error instanceof Error ? error : new Error(String(error)), {
       tags: { feature: 'background_delete', operation: 'register_task' }
