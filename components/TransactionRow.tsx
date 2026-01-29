@@ -22,6 +22,7 @@ export default function TransactionRow({
   const [iconFailed, setIconFailed] = useState(false);
   const [crowdSourcedIconUrl, setCrowdSourcedIconUrl] = useState<string | null>(null);
   const [crowdSourcedIconFailed, setCrowdSourcedIconFailed] = useState(false);
+  const [crowdSourcedLoading, setCrowdSourcedLoading] = useState(true);
   const titleKey = (transaction.title || "").toLowerCase();
   const isRevolutTransfer =
     (transaction.source === "revolut_import") &&
@@ -30,16 +31,35 @@ export default function TransactionRow({
 
   // Load crowd-sourced icon suggestion
   useEffect(() => {
+    let isMounted = true;
     const merchantName = transaction.displayName || transaction.title;
+    
+    // Reset state when merchant name changes
+    setCrowdSourcedLoading(true);
+    setCrowdSourcedIconUrl(null);
+    setCrowdSourcedIconFailed(false);
+    
     if (merchantName) {
       getSuggestedMerchantIcon(merchantName, 64)
         .then(url => {
-          setCrowdSourcedIconUrl(url);
-          setCrowdSourcedIconFailed(false);
+          if (isMounted) {
+            setCrowdSourcedIconUrl(url);
+            setCrowdSourcedIconFailed(false);
+            setCrowdSourcedLoading(false);
+          }
         })
-        .catch(() => setCrowdSourcedIconUrl(null));
+        .catch(() => {
+          if (isMounted) {
+            setCrowdSourcedIconUrl(null);
+            setCrowdSourcedLoading(false);
+          }
+        });
+    } else {
+      setCrowdSourcedLoading(false);
     }
-  }, [transaction.displayName, transaction.title]);
+    
+    return () => { isMounted = false; };
+  }, [transaction.displayName, transaction.title, transaction.id]);
 
   // Built-in icon (fallback)
   const builtInIconUrl = (shouldHideMerchantIcon || iconFailed)
