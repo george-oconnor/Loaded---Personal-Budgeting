@@ -5,8 +5,8 @@ import { Feather } from "@expo/vector-icons";
 import * as Clipboard from "expo-clipboard";
 import * as DocumentPicker from "expo-document-picker";
 import * as FileSystem from "expo-file-system";
-import { router } from "expo-router";
-import React, { useState } from "react";
+import { router, useLocalSearchParams } from "expo-router";
+import React, { useEffect, useState } from "react";
 import {
     ActivityIndicator,
     Alert,
@@ -39,11 +39,72 @@ export function clearParsedTransactions() {
 type AnalysisStatus = 'idle' | 'reading' | 'anonymizing' | 'analyzing' | 'parsing' | 'done' | 'error';
 
 export default function GenericCSVPasteScreen() {
+  const { csvContent: sharedCsvContent } = useLocalSearchParams<{ csvContent?: string }>();
   const [csvContent, setCSVContent] = useState("");
   const [loading, setLoading] = useState(false);
   const [analysisStatus, setAnalysisStatus] = useState<AnalysisStatus>('idle');
   const [analysisResult, setAnalysisResult] = useState<CSVAnalysisResult | null>(null);
   const [columnMapping, setColumnMapping] = useState<ColumnMapping | null>(null);
+  const [hasAutoAnalyzed, setHasAutoAnalyzed] = useState(false);
+
+  // Handle shared CSV content from other apps
+  useEffect(() => {
+    if (sharedCsvContent && !hasAutoAnalyzed) {
+      setCSVContent(sharedCsvContent);
+      setHasAutoAnalyzed(true);
+      // Auto-trigger analysis for shared content
+      setTimeout(() => {
+        analyzeSharedContent(sharedCsvContent);
+      }, 100);
+    }
+  }, [sharedCsvContent, hasAutoAnalyzed]);
+
+  const analyzeSharedContent = async (content: string) => {
+    // Reuse the analysis logic
+    setLoading(true);
+    setAnalysisStatus('anonymizing');
+    setAnalysisResult(null);
+    setColumnMapping(null);
+    
+    try {
+      setAnalysisStatus('analyzing');
+      const result = await analyzeCSVWithAI(content);
+      setAnalysisResult(result);
+      
+      if (!result.isValidForImport || !result.mapping) {
+        setAnalysisStatus('error');
+        Alert.alert("Analysis Failed", result.suggestion || "Could not determine CSV structure");
+        return;
+      }
+      
+      setColumnMapping(result.mapping);
+      setAnalysisStatus('parsing');
+      
+      const parseResult = await processGenericCSV(content, result.mapping);
+      
+      if (parseResult.transactions.length === 0) {
+        setAnalysisStatus('error');
+        Alert.alert("No Transactions", "No valid transactions found in the file");
+        return;
+      }
+      
+      parsedTransactionsCache = {
+        transactions: parseResult.transactions,
+        parsedRows: parseResult.transactions.length,
+        totalRows: parseResult.parseResult.totalRows,
+        skippedRows: parseResult.parseResult.skipped,
+        skippedDetails: parseResult.parseResult.skippedDetails,
+      };
+      
+      setAnalysisStatus('done');
+    } catch (err) {
+      console.error("Analysis error:", err);
+      setAnalysisStatus('error');
+      Alert.alert("Error", "Failed to analyze the CSV file");
+    } finally {
+      setLoading(false);
+    }
+  };
 
   const handlePaste = async () => {
     try {

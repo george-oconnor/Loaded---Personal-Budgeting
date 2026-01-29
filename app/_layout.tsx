@@ -237,8 +237,17 @@ export default function RootLayout() {
           if (provider === 'unknown') {
             Alert.alert(
               'Unrecognized Format',
-              'Could not determine if this is an AIB or Revolut CSV file. Please select the provider manually.',
+              'This CSV format is not recognized as AIB or Revolut. Would you like to use AI to analyze it, or select a provider manually?',
               [
+                {
+                  text: 'Use AI Analysis',
+                  onPress: () => {
+                    router.push({
+                      pathname: '/import/csv/paste',
+                      params: { csvContent: fileContent }
+                    } as any);
+                  }
+                },
                 {
                   text: 'AIB',
                   onPress: () => {
