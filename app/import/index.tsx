@@ -5,6 +5,14 @@ import { SafeAreaView } from "react-native-safe-area-context";
 
 const IMPORT_OPTIONS = [
   {
+    id: "csv",
+    name: "AI CSV Import",
+    icon: "file-text",
+    description: "Import from any bank's CSV export with AI-powered format detection",
+    color: "#10B981",
+    featured: true,
+  },
+  {
     id: "aib",
     name: "AIB",
     icon: "briefcase",
@@ -17,13 +25,6 @@ const IMPORT_OPTIONS = [
     icon: "credit-card",
     description: "Import transactions from your Revolut account",
     color: "#4F46E5",
-  },
-  {
-    id: "csv",
-    name: "CSV File",
-    icon: "file-text",
-    description: "Import from any bank's CSV export with AI-powered format detection",
-    color: "#10B981",
   },
   {
     id: "manual",
@@ -74,43 +75,70 @@ export default function ImportScreen() {
           </Text>
         </View>
 
-        {/* Import Options */}
-        <View className="gap-3 mb-8">
-          {IMPORT_OPTIONS.map((option) => (
-            <Pressable
-              key={option.id}
-              onPress={() => !option.comingSoon && handleImportOption(option.id)}
-              disabled={option.comingSoon}
-              className={`rounded-2xl border-2 p-4 flex-row items-start gap-4 ${
-                option.comingSoon
-                  ? "border-gray-200 bg-gray-50 opacity-60"
-                  : "border-gray-200 bg-white active:bg-gray-50"
-              }`}
+        {/* Main Featured Option - AI CSV Import */}
+        {IMPORT_OPTIONS.filter((opt) => opt.featured).map((option) => (
+          <Pressable
+            key={option.id}
+            onPress={() => handleImportOption(option.id)}
+            className="rounded-3xl border-2 p-6 flex-row items-start gap-4 mb-8 bg-emerald-50 border-emerald-300 shadow-sm"
+          >
+            <View
+              className="w-16 h-16 rounded-2xl items-center justify-center flex-shrink-0"
+              style={{ backgroundColor: `${option.color}25` }}
             >
-              <View
-                className="w-12 h-12 rounded-lg items-center justify-center"
-                style={{ backgroundColor: `${option.color}20` }}
-              >
-                <Feather name={option.icon as any} size={24} color={option.color} />
-              </View>
+              <Feather name={option.icon as any} size={32} color={option.color} />
+            </View>
 
-              <View className="flex-1">
-                <View className="flex-row items-center gap-2 mb-1">
-                  <Text className="text-base font-bold text-dark-100">{option.name}</Text>
-                  {option.comingSoon && (
-                    <View className="bg-yellow-100 px-2 py-1 rounded">
-                      <Text className="text-xs font-semibold text-yellow-800">Coming Soon</Text>
-                    </View>
-                  )}
+            <View className="flex-1">
+              <View className="flex-row items-center gap-2 mb-2">
+                <Text className="text-lg font-bold text-dark-100">{option.name}</Text>
+                <View className="bg-emerald-200 px-3 py-1 rounded-full">
+                  <Text className="text-xs font-bold text-emerald-800">Recommended</Text>
                 </View>
-                <Text className="text-sm text-gray-600">{option.description}</Text>
               </View>
+              <Text className="text-base text-gray-700 leading-5">{option.description}</Text>
+            </View>
 
-              {!option.comingSoon && (
-                <Feather name="arrow-right" size={20} color="#6B7280" />
-              )}
-            </Pressable>
-          ))}
+            <Feather name="arrow-right" size={24} color="#10B981" />
+          </Pressable>
+        ))}
+
+        {/* Alternative Options */}
+        <View className="mb-8">
+          <Text className="text-sm font-semibold text-gray-600 mb-3 px-2">Other Options</Text>
+          <View className="gap-2">
+            {IMPORT_OPTIONS.filter((opt) => !opt.featured).map((option) => (
+              <Pressable
+                key={option.id}
+                onPress={() => !option.comingSoon && handleImportOption(option.id)}
+                disabled={option.comingSoon}
+                className={`rounded-xl border-2 p-3 flex-row items-center gap-3 ${option.comingSoon ? "border-gray-200 bg-gray-50 opacity-60" : "border-gray-200 bg-white active:bg-gray-50"}`}
+              >
+                <View
+                  className="w-10 h-10 rounded-lg items-center justify-center flex-shrink-0"
+                  style={{ backgroundColor: `${option.color}20` }}
+                >
+                  <Feather name={option.icon as any} size={18} color={option.color} />
+                </View>
+
+                <View className="flex-1 min-h-12 justify-center">
+                  <View className="flex-row items-center gap-2">
+                    <Text className="text-sm font-semibold text-dark-100">{option.name}</Text>
+                    {option.comingSoon && (
+                      <View className="bg-yellow-100 px-2 py-0.5 rounded">
+                        <Text className="text-xs font-semibold text-yellow-800">Coming Soon</Text>
+                      </View>
+                    )}
+                  </View>
+                  <Text className="text-xs text-gray-600 mt-0.5">{option.description}</Text>
+                </View>
+
+                {!option.comingSoon && (
+                  <Feather name="arrow-right" size={16} color="#9CA3AF" />
+                )}
+              </Pressable>
+            ))}
+          </View>
         </View>
 
         {/* Info Section */}

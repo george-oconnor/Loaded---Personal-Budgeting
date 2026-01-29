@@ -243,8 +243,8 @@ export default function BalancesScreen() {
                           </View>
                           <View className="items-end flex-shrink-0">
                             <Text
-                              className="font-bold text-lg"
-                              style={{ color }}
+                              className={`font-bold text-lg ${account.balance < 0 ? 'text-red-500' : ''}`}
+                              style={account.balance < 0 ? undefined : { color }}
                             >
                               {formatCurrency(account.balance / 100, account.currency)}
                             </Text>
@@ -305,8 +305,8 @@ export default function BalancesScreen() {
                           </View>
                           <View className="items-end flex-shrink-0">
                             <Text
-                              className="font-bold text-lg"
-                              style={{ color }}
+                              className={`font-bold text-lg ${account.balance < 0 ? 'text-red-500' : ''}`}
+                              style={account.balance < 0 ? undefined : { color }}
                             >
                               {formatCurrency(account.balance / 100, account.currency)}
                             </Text>
