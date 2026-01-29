@@ -539,19 +539,43 @@ export async function getTransactionsInRange(userId: string, startISO: string, e
   return res.documents as unknown as TransactionDoc[];
 }
 
+// Filter type for paginated transactions
+export type TransactionFilter = 'all' | 'income' | 'expense' | 'hidden' | string;
+
 // Paginated transaction fetching for infinite scroll
 export async function getTransactionsPaginated(
   userId: string, 
   limit: number = 25, 
-  cursor?: string
+  cursor?: string,
+  filter?: TransactionFilter
 ): Promise<{ documents: TransactionDoc[]; hasMore: boolean; lastCursor?: string }> {
   if (!databaseId || !transactionsTableId) throw new Error("Appwrite env not configured");
   
   const queries: any[] = [
     Query.equal("userId", userId),
     Query.orderDesc("date"),
-    Query.limit(limit),
   ];
+
+  // Apply server-side filtering based on filter type
+  // For "hidden" filter, we need to fetch transactions that are auto-flagged transfers
+  if (filter === 'hidden') {
+    // Hidden = auto-flagged transfers (has matchedTransferId OR isAnalyticsProtected)
+    // Use OR query to get both types
+    queries.push(Query.or([
+      Query.isNotNull("matchedTransferId"),
+      Query.equal("isAnalyticsProtected", true),
+    ]));
+  } else if (filter === 'income') {
+    queries.push(Query.equal("kind", "income"));
+  } else if (filter === 'expense') {
+    queries.push(Query.equal("kind", "expense"));
+  } else if (filter && filter !== 'all') {
+    // Category filter
+    queries.push(Query.equal("categoryId", filter));
+  }
+  // For 'all' and other filters, client-side filtering will exclude hidden transactions
+
+  queries.push(Query.limit(limit));
 
   if (cursor) {
     queries.push(Query.cursorAfter(cursor));

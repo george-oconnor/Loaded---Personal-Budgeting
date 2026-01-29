@@ -1,5 +1,5 @@
 import TransactionListItem from "@/components/TransactionListItem";
-import { databases, getTransactionsPaginated } from "@/lib/appwrite";
+import { databases, getTransactionsPaginated, TransactionFilter } from "@/lib/appwrite";
 import { getQueuedTransactions } from "@/lib/syncQueue";
 import { useHomeStore } from "@/store/useHomeStore";
 import { useSessionStore } from "@/store/useSessionStore";
@@ -73,7 +73,7 @@ export default function AllTransactionsScreen() {
 
     try {
       const [result, queuedTxs] = await Promise.all([
-        getTransactionsPaginated(user.id, 25, reset ? undefined : cursor),
+        getTransactionsPaginated(user.id, 25, reset ? undefined : cursor, selectedFilter as TransactionFilter),
         reset ? getQueuedTransactions() : Promise.resolve([]),
       ]);
       
