@@ -1,25 +1,26 @@
 import { getCycleStartDate } from '@/lib/budgetCycle';
 import {
-    areNotificationsEnabled,
-    calculateBudgetStatus,
-    clearBadgeCount,
-    daysSinceImport,
-    getLastImportDates,
-    getStaleAccounts,
-    requestNotificationPermissions,
-    scheduleBudgetMilestoneNotification,
-    scheduleBudgetNotificationWhenBackground,
-    scheduleDailyBudgetCheck,
-    scheduleImportReminder,
-    scheduleWeeklyImportReminder,
+  areNotificationsEnabled,
+  calculateBudgetStatus,
+  clearBadgeCount,
+  daysSinceImport,
+  getLastImportDates,
+  getStaleAccounts,
+  initializeNotificationPreferences,
+  requestNotificationPermissions,
+  scheduleBudgetMilestoneNotification,
+  scheduleBudgetNotificationWhenBackground,
+  scheduleDailyBudgetCheck,
+  scheduleImportReminder,
+  scheduleWeeklyImportReminder,
 } from '@/lib/notifications';
 import { useHomeStore } from '@/store/useHomeStore';
 import {
-    createBudgetExceededNotification,
-    createBudgetOnTrackNotification,
-    createBudgetWarningNotification,
-    createGeneralImportReminderNotification,
-    useNotificationStore
+  createBudgetExceededNotification,
+  createBudgetOnTrackNotification,
+  createBudgetWarningNotification,
+  createGeneralImportReminderNotification,
+  useNotificationStore
 } from '@/store/useNotificationStore';
 import { useSessionStore } from '@/store/useSessionStore';
 import * as Notifications from 'expo-notifications';
@@ -48,15 +49,18 @@ export function useNotifications() {
 
   // Initialize notifications on mount
   useEffect(() => {
-    if (initialized.current) return;
+    if (initialized.current || !user?.id) return;
     initialized.current = true;
 
     const initializeNotifications = async () => {
       // Load existing in-app notifications
       await loadNotifications();
 
+      // Initialize notification preferences (clears if disabled)
+      await initializeNotificationPreferences(user.id);
+
       // Request permissions
-      const granted = await requestNotificationPermissions();
+      const granted = await requestNotificationPermissions(user.id);
       if (!granted) {
         console.log('Notification permissions not granted');
         return;
@@ -89,7 +93,7 @@ export function useNotifications() {
       responseListener.current?.remove();
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, []);
+  }, [user?.id]);
 
   // Handle notification taps
   const handleNotificationPress = (data: Record<string, any>) => {
@@ -136,7 +140,7 @@ export function useNotifications() {
       const statusInfo = calculateBudgetStatus(expenses, budget, cycleStart);
 
       // Use smart milestone notifications for better engagement
-      const enabled = await areNotificationsEnabled();
+      const enabled = await areNotificationsEnabled(user.id);
       if (enabled) {
         await scheduleBudgetMilestoneNotification(
           statusInfo.percentage,
@@ -191,21 +195,21 @@ export function useNotifications() {
     lastImportCheck.current = now;
 
     try {
-      const staleAccounts = await getStaleAccounts(STALE_IMPORT_THRESHOLD_DAYS);
+      const staleAccounts = await getStaleAccounts(STALE_IMPORT_THRESHOLD_DAYS, user.id);
 
       // Only send push notifications for stale imports, no in-app notifications
       for (const account of staleAccounts) {
         const days = daysSinceImport(account.lastImportDate);
         
         // Send push notification for stale accounts
-        const enabled = await areNotificationsEnabled();
+        const enabled = await areNotificationsEnabled(user.id);
         if (enabled) {
           await scheduleImportReminder(account.accountName, account.provider, days);
         }
       }
 
       // If user has never imported, remind them
-      const allImports = await getLastImportDates();
+      const allImports = await getLastImportDates(user.id);
       if (allImports.length === 0) {
         await addNotification(createGeneralImportReminderNotification());
       }
