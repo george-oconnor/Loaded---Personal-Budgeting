@@ -30,6 +30,11 @@ export default function RemainingSpendCard({
   const [pressed, setPressed] = useState(false);
   const [cardPressed, setCardPressed] = useState(false);
   
+  // Helper to check if a transaction should be excluded from analytics
+  const shouldExcludeFromAnalytics = (t: Transaction) => {
+    return t.excludeFromAnalytics || t.matchedTransferId || t.isAnalyticsProtected;
+  };
+  
   // Calculate budget statistics for the selected cycle (with offset support)
   const { cycleExpenses, remaining, isOverspent, progress, daysRemaining, isCompletedCycle } = useMemo(() => {
     const cycleStart = getCycleStartDateWithOffset(cycleType, cycleDay, cycleOffset);
@@ -41,8 +46,9 @@ export default function RemainingSpendCard({
       return txDate >= cycleStart && txDate <= cycleEnd;
     });
     
+    // Calculate expenses, excluding hidden/excluded transactions
     const expenses = cycleTransactions
-      .filter(t => t.kind === "expense")
+      .filter(t => t.kind === "expense" && !shouldExcludeFromAnalytics(t))
       .reduce((sum, t) => sum + Math.abs(t.amount), 0);
     
     const rem = budget - expenses;
