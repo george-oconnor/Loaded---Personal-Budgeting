@@ -1,7 +1,7 @@
 import { Feather } from "@expo/vector-icons";
 import { router } from "expo-router";
 import { Pressable, ScrollView, Text, View } from "react-native";
-import { SafeAreaView } from "react-native-safe-area-context";
+import { SafeAreaView, useSafeAreaInsets } from "react-native-safe-area-context";
 
 const TUTORIAL_STEPS = [
   {
@@ -50,10 +50,12 @@ const SECURITY_POINTS = [
 ];
 
 export default function GenericCSVImportScreen() {
+  const insets = useSafeAreaInsets();
+
   return (
-    <SafeAreaView className="flex-1 bg-white">
+    <SafeAreaView className="flex-1 bg-white" edges={['top']}>
       <ScrollView
-        contentContainerStyle={{ flexGrow: 1, paddingHorizontal: 20, paddingTop: 20, paddingBottom: 100 }}
+        contentContainerStyle={{ flexGrow: 1, paddingHorizontal: 20, paddingTop: 20, paddingBottom: 120 }}
         showsVerticalScrollIndicator={false}
       >
         {/* Header */}
@@ -134,7 +136,10 @@ export default function GenericCSVImportScreen() {
       </ScrollView>
 
       {/* Bottom CTA */}
-      <View className="absolute bottom-0 left-0 right-0 p-4 bg-white border-t border-gray-100">
+      <View 
+        className="absolute bottom-0 left-0 right-0 p-4 bg-white border-t border-gray-100"
+        style={{ paddingBottom: Math.max(insets.bottom, 16) }}
+      >
         <Pressable
           onPress={() => router.push("/import/csv/paste" as any)}
           className="w-full bg-emerald-500 py-4 rounded-2xl items-center active:opacity-80"
