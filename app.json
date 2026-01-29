@@ -14,29 +14,42 @@
       "buildNumber": "1",
       "supportsTablet": true,
       "bundleIdentifier": "com.georgeoc.budgetapp",
-      "backgroundModes": ["fetch"],
+      "backgroundModes": [
+        "fetch"
+      ],
       "infoPlist": {
         "ITSAppUsesNonExemptEncryption": false,
         "LSSupportsOpeningDocumentsInPlace": false,
         "NSFaceIDUsageDescription": "Use Face ID to securely access your budget data.",
         "NSCameraUsageDescription": "Camera access is used to scan receipts (if feature is enabled).",
         "NSPhotoLibraryUsageDescription": "Photo library access is used to attach receipt images to transactions.",
-        "UIBackgroundModes": ["fetch"],
+        "UIBackgroundModes": [
+          "fetch"
+        ],
         "CFBundleDocumentTypes": [
           {
             "CFBundleTypeName": "CSV File",
             "LSHandlerRank": "Alternate",
-            "LSItemContentTypes": ["public.comma-separated-values-text"]
+            "LSItemContentTypes": [
+              "public.comma-separated-values-text"
+            ]
           }
         ],
         "UTImportedTypeDeclarations": [
           {
             "UTTypeIdentifier": "public.comma-separated-values-text",
-            "UTTypeConformsTo": ["public.text", "public.data"],
+            "UTTypeConformsTo": [
+              "public.text",
+              "public.data"
+            ],
             "UTTypeDescription": "CSV File",
             "UTTypeTagSpecification": {
-              "public.filename-extension": ["csv"],
-              "public.mime-type": ["text/csv"]
+              "public.filename-extension": [
+                "csv"
+              ],
+              "public.mime-type": [
+                "text/csv"
+              ]
             }
           }
         ]
@@ -73,7 +86,8 @@
           }
         }
       ],
-      "expo-notifications"
+      "expo-notifications",
+      "expo-secure-store"
     ],
     "experiments": {
       "typedRoutes": true,

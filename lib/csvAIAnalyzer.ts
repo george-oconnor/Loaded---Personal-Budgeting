@@ -11,10 +11,10 @@
  */
 
 import {
-  anonymizeCSVForAnalysis,
-  createStructureDescription,
-  CSVStructure,
-  validateNoSensitiveData,
+    anonymizeCSVForAnalysis,
+    createStructureDescription,
+    CSVStructure,
+    validateNoSensitiveData,
 } from './csvAnonymizer';
 
 // Required fields for a valid transaction import
