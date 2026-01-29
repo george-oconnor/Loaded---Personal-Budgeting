@@ -370,11 +370,11 @@ export default function ImportPreviewScreen() {
       const accountNames = new Set(finalTransactions.map(tx => tx.account).filter(Boolean));
       for (const accountName of accountNames) {
         const accountKey = `revolut-${accountName?.toLowerCase().replace(/\s+/g, '-')}`;
-        await saveLastImportDate(accountKey, accountName || 'Revolut', 'revolut');
+        await saveLastImportDate(accountKey, accountName || 'Revolut', 'revolut', user?.id);
       }
       // If no specific accounts, track general revolut import
       if (accountNames.size === 0) {
-        await saveLastImportDate('revolut-main', 'Revolut', 'revolut');
+        await saveLastImportDate('revolut-main', 'Revolut', 'revolut', user?.id);
       }
       console.log(`Import date tracked for Revolut accounts: ${Array.from(accountNames).join(', ') || 'main'}`);
 

@@ -476,7 +476,8 @@ export default function ImportPreviewScreen() {
       await saveLastImportDate(
         accountKeyToTrack,
         selectedAccountName || newAccountName,
-        'aib'
+        'aib',
+        user?.id
       );
       console.log(`Step 14 complete: Import date tracked for ${accountKeyToTrack}`);
       
