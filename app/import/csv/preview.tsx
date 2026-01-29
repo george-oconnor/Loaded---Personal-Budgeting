@@ -1,4 +1,4 @@
-import { saveBalanceSnapshot } from "@/lib/accountBalances";
+import { saveBalanceSnapshot, updateAccountBalance, upsertBalanceRemote } from "@/lib/accountBalances";
 import { getAllTransactionsForUser, updateTransaction } from "@/lib/appwrite";
 import { getTransferCategoryId } from "@/lib/categorization";
 import { detectTransferPairs, ParsedTransaction } from "@/lib/csvParser";
@@ -8,7 +8,7 @@ import { useHomeStore } from "@/store/useHomeStore";
 import { useSessionStore } from "@/store/useSessionStore";
 import { Feather } from "@expo/vector-icons";
 import { ID } from "appwrite";
-import { router } from "expo-router";
+import { router, useLocalSearchParams } from "expo-router";
 import { useEffect, useRef, useState } from "react";
 import {
     ActivityIndicator,
@@ -50,6 +50,16 @@ const makeKeyFromDoc = (doc: any) =>
 export default function GenericCSVPreviewScreen() {
   const { user } = useSessionStore();
   const { fetchHome } = useHomeStore();
+  const params = useLocalSearchParams();
+  
+  // Get account info from params (passed from select-account screen)
+  const selectedAccountKey = params.selectedAccountKey as string | undefined;
+  const selectedAccountName = params.selectedAccountName as string | undefined;
+  const selectedAccountType = params.selectedAccountType as string | undefined;
+  const selectedAccountCurrency = params.selectedAccountCurrency as string | undefined;
+  const initialBalance = params.initialBalance as string | undefined;
+  const isNewAccount = params.isNewAccount === "true";
+  
   const [loading, setLoading] = useState(false);
   const [transactions, setTransactions] = useState<Transaction[]>([]);
   const [importProgress, setImportProgress] = useState({ current: 0, total: 0 });
@@ -67,11 +77,18 @@ export default function GenericCSVPreviewScreen() {
   } | null>(null);
   const cancelRef = useRef(false);
 
-  // Get transactions from cache
+  // Get transactions from cache and apply account info
   useEffect(() => {
     const cached = getParsedTransactions();
     if (cached) {
-      setTransactions(cached.transactions as Transaction[]);
+      // Apply account info to all transactions
+      const transactionsWithAccount = cached.transactions.map(tx => ({
+        ...tx,
+        account: selectedAccountName || 'CSV Import',
+        currency: selectedAccountCurrency || tx.currency || 'EUR',
+      })) as Transaction[];
+      
+      setTransactions(transactionsWithAccount);
       setParseStats({
         totalRows: cached.totalRows,
         parsedRows: cached.parsedRows,
@@ -82,7 +99,7 @@ export default function GenericCSVPreviewScreen() {
       Alert.alert("Error", "No transactions found. Please go back and try again.");
       router.back();
     }
-  }, []);
+  }, [selectedAccountName, selectedAccountCurrency]);
 
   // Precheck dedupe so the user sees skips before importing
   useEffect(() => {
@@ -124,7 +141,10 @@ export default function GenericCSVPreviewScreen() {
       return;
     }
 
-    if (transactions.length === 0) {
+    // Allow import with 0 transactions if we have an account balance to update
+    const hasBalanceToUpdate = isNewAccount && initialBalance && parseFloat(initialBalance) > 0;
+    
+    if (transactions.length === 0 && !hasBalanceToUpdate) {
       Alert.alert("Error", "No transactions to import");
       return;
     }
@@ -236,9 +256,91 @@ export default function GenericCSVPreviewScreen() {
       await saveLastImportDate('csv-import', 'CSV Import', 'other', user?.id);
       console.log(`Import date tracked for CSV import`);
 
+      // Create/update account if we have account info
+      if (selectedAccountKey && selectedAccountName) {
+        try {
+          if (isNewAccount) {
+            // Create the new account with initial balance (or 0 if not provided)
+            const balanceInCents = initialBalance 
+              ? Math.round(parseFloat(initialBalance) * 100) 
+              : 0;
+            
+            const finalBalance = isNaN(balanceInCents) ? 0 : balanceInCents;
+            const accountCurrency = selectedAccountCurrency || 'EUR';
+            const accountType = selectedAccountType || 'Current';
+            
+            // Save to local storage
+            await updateAccountBalance(
+              selectedAccountName,
+              finalBalance,
+              accountCurrency,
+              {
+                accountKey: selectedAccountKey,
+                accountType: accountType,
+                provider: 'csv',
+                userId: user.id,
+              }
+            );
+            
+            // Sync to Appwrite
+            await upsertBalanceRemote(
+              user.id,
+              {
+                accountKey: selectedAccountKey,
+                accountName: selectedAccountName,
+                accountType: accountType,
+                provider: 'csv',
+                currency: accountCurrency,
+              },
+              finalBalance
+            );
+            
+            console.log(`Created new account: ${selectedAccountName} with balance: ${finalBalance}`);
+          }
+        } catch (balanceErr) {
+          console.error("Failed to create/update account:", balanceErr);
+          // Don't fail the import if account creation fails
+        }
+      }
+
+      // Build appropriate success message
+      const balanceProvided = initialBalance && parseFloat(initialBalance) > 0;
+      let successMessage = "";
+      
+      if (finalTransactions.length > 0) {
+        successMessage = `Added ${finalTransactions.length} transactions to your queue.`;
+        if (skipped > 0) {
+          successMessage += `\nSkipped ${skipped} duplicate(s).`;
+        }
+        if (isNewAccount) {
+          successMessage += `\nCreated account: ${selectedAccountName}`;
+        }
+      } else if (isNewAccount) {
+        successMessage = `Created account: ${selectedAccountName}`;
+        if (balanceProvided) {
+          successMessage += ` with balance.`;
+        }
+        if (skipped > 0) {
+          successMessage += `\nSkipped ${skipped} duplicate transaction(s).`;
+        }
+      } else {
+        successMessage = `No new transactions to import.`;
+        if (skipped > 0) {
+          successMessage += `\nAll ${skipped} transactions were duplicates.`;
+        }
+      }
+      
+      if (!isNewAccount && selectedAccountName) {
+        successMessage += `\n\nAccount: ${selectedAccountName}`;
+      }
+      
+      if (finalTransactions.length > 0) {
+        successMessage += `\n\nThey will sync to your account shortly.`;
+      }
+
       Alert.alert(
-        "Import Queued",
-        `Added ${finalTransactions.length} transactions to your queue.${skipped > 0 ? `\nSkipped ${skipped} duplicate(s).` : ""}\n\nThey will sync to your account shortly.`,
+        finalTransactions.length > 0 ? "Import Queued" : (isNewAccount ? "Account Created" : "Import Complete"),
+        successMessage,
         [
           {
             text: "View Home",
@@ -316,6 +418,30 @@ export default function GenericCSVPreviewScreen() {
               </Text>
             </View>
           </View>
+          
+          {/* Account Info Banner */}
+          {selectedAccountName && (
+            <View className="mt-4 flex-row items-center gap-3 p-3 bg-emerald-50 rounded-xl border border-emerald-200">
+              <View className="w-8 h-8 rounded-full bg-emerald-500 items-center justify-center">
+                <Feather name="credit-card" size={16} color="white" />
+              </View>
+              <View className="flex-1">
+                <Text className="text-sm font-semibold text-emerald-800">
+                  {selectedAccountName}
+                </Text>
+                <Text className="text-xs text-emerald-600">
+                  {selectedAccountType || 'Account'} • {selectedAccountCurrency || 'EUR'}
+                  {isNewAccount ? ' • New Account' : ''}
+                </Text>
+              </View>
+              <Pressable
+                onPress={() => router.back()}
+                className="px-3 py-1.5 rounded-lg bg-emerald-100 active:bg-emerald-200"
+              >
+                <Text className="text-xs font-semibold text-emerald-700">Change</Text>
+              </Pressable>
+            </View>
+          )}
         </View>
 
         {/* Summary */}
@@ -427,7 +553,11 @@ export default function GenericCSVPreviewScreen() {
           {precheckDone && !loading && (
             <View className="items-center">
               <Text className="text-xs text-gray-600">
-                Will skip {preSkippedCount} duplicate{preSkippedCount === 1 ? "" : "s"} • Will import {preUniqueCount}
+                {preUniqueCount === 0 && preSkippedCount > 0 
+                  ? `All ${preSkippedCount} transactions already imported`
+                  : `Will skip ${preSkippedCount} duplicate${preSkippedCount === 1 ? "" : "s"} • Will import ${preUniqueCount}`
+                }
+                {isNewAccount && initialBalance ? ` • Will update balance` : ''}
               </Text>
             </View>
           )}
@@ -440,9 +570,9 @@ export default function GenericCSVPreviewScreen() {
           )}
           <Pressable
             onPress={handleImport}
-            disabled={!precheckDone || loading || transactions.length === 0 || preUniqueCount === 0}
+            disabled={!precheckDone || loading || (transactions.length === 0 && !(isNewAccount && initialBalance))}
             className={`rounded-2xl py-4 items-center ${
-              !precheckDone || loading || transactions.length === 0 || preUniqueCount === 0 
+              !precheckDone || loading || (transactions.length === 0 && !(isNewAccount && initialBalance))
                 ? "bg-gray-300" 
                 : "bg-emerald-500"
             }`}
@@ -465,7 +595,10 @@ export default function GenericCSVPreviewScreen() {
               <View className="flex-row items-center gap-2">
                 <Feather name="check-circle" size={18} color="white" />
                 <Text className="text-white text-base font-bold">
-                  Import {preUniqueCount} Transaction{preUniqueCount === 1 ? "" : "s"}
+                  {preUniqueCount === 0 
+                    ? (isNewAccount && initialBalance ? "Update Account Balance" : "No New Transactions")
+                    : `Import ${preUniqueCount} Transaction${preUniqueCount === 1 ? "" : "s"}`
+                  }
                 </Text>
               </View>
             )}
