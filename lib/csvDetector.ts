@@ -1,9 +1,9 @@
 /**
  * CSV Format Detection Utility
- * Detects whether a CSV file is from AIB or Revolut based on headers and structure
+ * Detects whether a CSV file is from AIB, Revolut, or a generic format based on headers and structure
  */
 
-export type CSVProvider = 'aib' | 'revolut' | 'unknown';
+export type CSVProvider = 'aib' | 'revolut' | 'generic' | 'unknown';
 
 /**
  * Detect the CSV provider based on the file content
