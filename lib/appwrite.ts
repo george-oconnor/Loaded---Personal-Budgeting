@@ -21,6 +21,12 @@ const usersTableId =
 const balancesTableId =
   process.env.EXPO_PUBLIC_APPWRITE_TABLE_BALANCES ||
   process.env.EXPO_PUBLIC_APPWRITE_COLLECTION_BALANCES;
+const accountImportsTableId =
+  process.env.EXPO_PUBLIC_APPWRITE_TABLE_ACCOUNT_IMPORTS ||
+  process.env.EXPO_PUBLIC_APPWRITE_COLLECTION_ACCOUNT_IMPORTS;
+const userPreferencesTableId =
+  process.env.EXPO_PUBLIC_APPWRITE_TABLE_USER_PREFERENCES ||
+  process.env.EXPO_PUBLIC_APPWRITE_COLLECTION_USER_PREFERENCES;
 
 export const appwriteClient = new Client();
 if (endpoint && projectId) {
@@ -195,6 +201,23 @@ export type BudgetDoc = {
   cycleDay?: number; // For specific_date: 1-31
   budgetSource?: "manual" | "lastMonth";
   lastMonthReference?: string;
+};
+
+export type AccountImportDoc = {
+  userId: string;
+  accountKey: string;
+  accountName: string;
+  provider: string; // 'revolut' | 'aib'
+  lastImportDate: string; // ISO timestamp
+  $createdAt?: string;
+  $updatedAt?: string;
+};
+
+export type UserPreferencesDoc = {
+  userId: string;
+  dismissedImportBanners?: Record<string, string>; // accountKey -> lastImportDate at dismissal
+  notificationsEnabled?: boolean; // User's notification preference
+  $updatedAt?: string;
 };
 
 export type TransactionDoc = {
@@ -1063,6 +1086,31 @@ export async function deleteUserAccount(userId: string): Promise<{ success: bool
       }
     }
 
+    // Delete account imports
+    if (accountImportsTableId) {
+      console.log("Deleting account imports...");
+      try {
+        const imports = await databases.listDocuments(databaseId, accountImportsTableId, [
+          Query.equal("userId", userId),
+        ]);
+        for (const doc of imports.documents) {
+          await databases.deleteDocument(databaseId, accountImportsTableId, doc.$id);
+        }
+      } catch (err) {
+        console.log("Error deleting account imports (continuing):", err);
+      }
+    }
+
+    // Delete user preferences
+    if (userPreferencesTableId) {
+      console.log("Deleting user preferences...");
+      try {
+        await databases.deleteDocument(databaseId, userPreferencesTableId, userId);
+      } catch (err) {
+        console.log("Error deleting user preferences (continuing):", err);
+      }
+    }
+
     // Delete user profile document
     if (usersTableId) {
       console.log("Deleting user profile...");
@@ -1088,6 +1136,166 @@ export async function deleteUserAccount(userId: string): Promise<{ success: bool
       contexts: { deletion: { userId } }
     });
     return { success: false, error: err instanceof Error ? err.message : "Failed to delete account" };
+  }
+}
+
+// Account Import Tracking Functions
+export async function saveAccountImport(
+  userId: string,
+  accountKey: string,
+  accountName: string,
+  provider: string
+): Promise<void> {
+  if (!databaseId || !accountImportsTableId) {
+    console.warn("Account imports table not configured");
+    return;
+  }
+
+  try {
+    const now = new Date().toISOString();
+    
+    // Check if record exists
+    const existing = await databases.listDocuments(databaseId, accountImportsTableId, [
+      Query.equal("userId", userId),
+      Query.equal("accountKey", accountKey),
+    ]);
+
+    if (existing.documents.length > 0) {
+      // Update existing
+      await databases.updateDocument(
+        databaseId,
+        accountImportsTableId,
+        existing.documents[0].$id,
+        {
+          accountName,
+          provider,
+          lastImportDate: now,
+        }
+      );
+    } else {
+      // Create new
+      await databases.createDocument(
+        databaseId,
+        accountImportsTableId,
+        ID.unique(),
+        {
+          userId,
+          accountKey,
+          accountName,
+          provider,
+          lastImportDate: now,
+        },
+        [
+          Permission.read(Role.user(userId)),
+          Permission.update(Role.user(userId)),
+          Permission.delete(Role.user(userId)),
+        ]
+      );
+    }
+  } catch (err) {
+    console.error("saveAccountImport error:", err);
+    captureException(err instanceof Error ? err : new Error(String(err)), {
+      tags: { operation: 'save_account_import', feature: 'notifications' },
+    });
+    throw err;
+  }
+}
+
+export async function getAccountImports(userId: string): Promise<AccountImportDoc[]> {
+  if (!databaseId || !accountImportsTableId) {
+    console.warn("Account imports table not configured");
+    return [];
+  }
+
+  try {
+    const result = await databases.listDocuments(databaseId, accountImportsTableId, [
+      Query.equal("userId", userId),
+    ]);
+
+    return result.documents.map(doc => ({
+      userId: doc.userId,
+      accountKey: doc.accountKey,
+      accountName: doc.accountName,
+      provider: doc.provider,
+      lastImportDate: doc.lastImportDate,
+      $createdAt: doc.$createdAt,
+      $updatedAt: doc.$updatedAt,
+    }));
+  } catch (err) {
+    console.error("getAccountImports error:", err);
+    return [];
+  }
+}
+
+// User Preferences Functions
+export async function getUserPreferences(userId: string): Promise<UserPreferencesDoc | null> {
+  if (!databaseId || !userPreferencesTableId) {
+    console.warn("User preferences table not configured");
+    return null;
+  }
+
+  try {
+    const doc = await databases.getDocument(databaseId, userPreferencesTableId, userId);
+    return {
+      userId: doc.userId,
+      dismissedImportBanners: doc.dismissedImportBanners || {},
+      $updatedAt: doc.$updatedAt,
+    };
+  } catch (err) {
+    // Document doesn't exist yet
+    if ((err as any)?.code === 404) {
+      return null;
+    }
+    console.error("getUserPreferences error:", err);
+    return null;
+  }
+}
+
+export async function saveUserPreferences(
+  userId: string,
+  preferences: Partial<Omit<UserPreferencesDoc, 'userId' | '$updatedAt'>>
+): Promise<void> {
+  if (!databaseId || !userPreferencesTableId) {
+    console.warn("User preferences table not configured");
+    return;
+  }
+
+  try {
+    // Try to update existing
+    try {
+      await databases.updateDocument(
+        databaseId,
+        userPreferencesTableId,
+        userId,
+        preferences
+      );
+    } catch (updateErr) {
+      // Document doesn't exist, create it
+      if ((updateErr as any)?.code === 404) {
+        await databases.createDocument(
+          databaseId,
+          userPreferencesTableId,
+          userId,
+          {
+            userId,
+            ...preferences,
+          },
+          [
+            Permission.read(Role.user(userId)),
+            Permission.update(Role.user(userId)),
+            Permission.delete(Role.user(userId)),
+          ]
+        );
+      } else {
+        throw updateErr;
+      }
+    }
+  } catch (err) {
+    console.error("saveUserPreferences error:", err);
+    captureException(err instanceof Error ? err : new Error(String(err)), {
+      tags: { operation: 'save_user_preferences', feature: 'notifications' },
+    });
+    throw err;
   }
 }
 
