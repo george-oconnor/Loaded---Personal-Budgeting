@@ -911,39 +911,3 @@ export async function disableNotifications(userId: string): Promise<void> {
     throw error;
   }
 }
-
-/**
- * Clear all scheduled notifications
- * Used when user disables notifications
- */
-export async function clearAllScheduledNotifications(): Promise<void> {
-  try {
-    console.log('Clearing all scheduled notifications...');
-    await Notifications.cancelAllScheduledNotificationsAsync();
-    
-    // Clear tracking data
-    await AsyncStorage.removeItem(SCHEDULED_NOTIFICATIONS_KEY);
-    console.log('All scheduled notifications cleared');
-  } catch (error) {
-    console.error('Failed to clear scheduled notifications:', error);
-    captureException(error instanceof Error ? error : new Error(String(error)));
-  }
-}
-
-/**
- * Initialize notification preferences on app load
- * Clears scheduled notifications if user has disabled them
- */
-export async function initializeNotificationPreferences(userId: string): Promise<void> {
-  try {
-    const prefs = await getUserPreferences(userId);
-    
-    // If user explicitly disabled notifications, clear scheduled ones
-    if (prefs?.notificationsEnabled === false) {
-      console.log('User has notifications disabled, clearing scheduled notifications');
-      await clearAllScheduledNotifications();
-    }
-  } catch (error) {
-    console.warn('Failed to initialize notification preferences:', error);
-  }
-}
