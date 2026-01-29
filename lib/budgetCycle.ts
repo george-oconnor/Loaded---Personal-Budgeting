@@ -333,3 +333,205 @@ export function getCycleBudgetStats(
     cycleEnd: getCycleEndDate(),
   };
 }
+
+/**
+ * Get cycle start date with an offset (0 = current, -1 = previous, -2 = two ago, etc.)
+ */
+export function getCycleStartDateWithOffset(
+  cycleType: "first_working_day" | "last_working_day" | "specific_date" | "last_friday" = "first_working_day",
+  cycleDay?: number,
+  offset: number = 0
+): Date {
+  if (offset === 0) {
+    return getCycleStartDate(cycleType, cycleDay);
+  }
+  
+  // Start from current cycle and move backwards/forwards
+  let result = getCycleStartDate(cycleType, cycleDay);
+  
+  if (offset < 0) {
+    // Go back in time
+    for (let i = 0; i > offset; i--) {
+      // Temporarily set "now" to just before the current result to get the previous cycle
+      const tempDate = new Date(result);
+      tempDate.setDate(tempDate.getDate() - 1);
+      result = getCycleStartDateForReference(cycleType, cycleDay, tempDate);
+    }
+  } else {
+    // Go forward in time
+    for (let i = 0; i < offset; i++) {
+      result = getNextCycleStartDateForReference(cycleType, cycleDay, result);
+    }
+  }
+  
+  return result;
+}
+
+/**
+ * Get cycle start date relative to a reference date
+ */
+export function getCycleStartDateForReference(
+  cycleType: "first_working_day" | "last_working_day" | "specific_date" | "last_friday" = "first_working_day",
+  cycleDay?: number,
+  referenceDate: Date = new Date()
+): Date {
+  const now = new Date(referenceDate);
+  now.setHours(0, 0, 0, 0);
+  const year = now.getFullYear();
+  const month = now.getMonth();
+
+  let cycleStart: Date;
+
+  switch (cycleType) {
+    case "first_working_day": {
+      cycleStart = new Date(year, month, 1, 0, 0, 0);
+      while (cycleStart.getDay() === 0 || cycleStart.getDay() === 6) {
+        cycleStart.setDate(cycleStart.getDate() + 1);
+      }
+      if (cycleStart > now) {
+        cycleStart = new Date(year, month - 1, 1, 0, 0, 0);
+        while (cycleStart.getDay() === 0 || cycleStart.getDay() === 6) {
+          cycleStart.setDate(cycleStart.getDate() + 1);
+        }
+      }
+      break;
+    }
+
+    case "last_working_day": {
+      cycleStart = new Date(year, month, 0, 0, 0, 0);
+      while (cycleStart.getDay() === 0 || cycleStart.getDay() === 6) {
+        cycleStart.setDate(cycleStart.getDate() - 1);
+      }
+      
+      const currentMonthLastWorking = new Date(year, month + 1, 0, 0, 0, 0);
+      while (currentMonthLastWorking.getDay() === 0 || currentMonthLastWorking.getDay() === 6) {
+        currentMonthLastWorking.setDate(currentMonthLastWorking.getDate() - 1);
+      }
+      
+      if (now >= currentMonthLastWorking) {
+        cycleStart = currentMonthLastWorking;
+      }
+      break;
+    }
+
+    case "specific_date": {
+      const cycleDay_ = cycleDay ?? 1;
+      cycleStart = new Date(year, month, cycleDay_, 0, 0, 0);
+      
+      if (cycleStart > now) {
+        cycleStart = new Date(year, month - 1, cycleDay_, 0, 0, 0);
+      }
+      break;
+    }
+
+    case "last_friday": {
+      const lastDayOfMonth = new Date(year, month + 1, 0, 0, 0, 0);
+      let lastFriday = new Date(lastDayOfMonth);
+      
+      while (lastFriday.getDay() !== 5) {
+        lastFriday.setDate(lastFriday.getDate() - 1);
+      }
+      
+      if (lastFriday > now) {
+        const prevMonthLastDay = new Date(year, month, 0, 0, 0, 0);
+        cycleStart = new Date(prevMonthLastDay);
+        while (cycleStart.getDay() !== 5) {
+          cycleStart.setDate(cycleStart.getDate() - 1);
+        }
+      } else {
+        cycleStart = lastFriday;
+      }
+      break;
+    }
+
+    default:
+      cycleStart = new Date(year, month, 1, 0, 0, 0);
+  }
+
+  return cycleStart;
+}
+
+/**
+ * Get the next cycle start date relative to a reference date
+ */
+export function getNextCycleStartDateForReference(
+  cycleType: "first_working_day" | "last_working_day" | "specific_date" | "last_friday" = "first_working_day",
+  cycleDay?: number,
+  referenceDate: Date = new Date()
+): Date {
+  const now = new Date(referenceDate);
+  now.setHours(0, 0, 0, 0);
+  const year = now.getFullYear();
+  const month = now.getMonth();
+
+  let nextCycleStart: Date;
+
+  switch (cycleType) {
+    case "first_working_day": {
+      nextCycleStart = new Date(year, month + 1, 1, 0, 0, 0);
+      while (nextCycleStart.getDay() === 0 || nextCycleStart.getDay() === 6) {
+        nextCycleStart.setDate(nextCycleStart.getDate() + 1);
+      }
+      break;
+    }
+
+    case "last_working_day": {
+      nextCycleStart = new Date(year, month + 1, 0, 0, 0, 0);
+      while (nextCycleStart.getDay() === 0 || nextCycleStart.getDay() === 6) {
+        nextCycleStart.setDate(nextCycleStart.getDate() - 1);
+      }
+      if (now >= nextCycleStart) {
+        nextCycleStart = new Date(year, month + 2, 0, 0, 0, 0);
+        while (nextCycleStart.getDay() === 0 || nextCycleStart.getDay() === 6) {
+          nextCycleStart.setDate(nextCycleStart.getDate() - 1);
+        }
+      }
+      break;
+    }
+
+    case "specific_date": {
+      const day = cycleDay ?? 1;
+      nextCycleStart = new Date(year, month, day, 0, 0, 0);
+      if (now >= nextCycleStart) {
+        nextCycleStart = new Date(year, month + 1, day, 0, 0, 0);
+      }
+      break;
+    }
+
+    case "last_friday": {
+      let lastDay = new Date(year, month + 1, 0, 0, 0, 0);
+      while (lastDay.getDay() !== 5) {
+        lastDay.setDate(lastDay.getDate() - 1);
+      }
+      nextCycleStart = lastDay;
+      if (now >= nextCycleStart) {
+        lastDay = new Date(year, month + 2, 0, 0, 0, 0);
+        while (lastDay.getDay() !== 5) {
+          lastDay.setDate(lastDay.getDate() - 1);
+        }
+        nextCycleStart = lastDay;
+      }
+      break;
+    }
+
+    default:
+      throw new Error(`Unknown cycle type: ${cycleType}`);
+  }
+
+  return nextCycleStart;
+}
+
+/**
+ * Get the cycle end date for a specific cycle start
+ */
+export function getCycleEndDateForCycleStart(
+  cycleType: "first_working_day" | "last_working_day" | "specific_date" | "last_friday" = "first_working_day",
+  cycleDay?: number,
+  cycleStart: Date = getCycleStartDate(cycleType, cycleDay)
+): Date {
+  const nextCycleStart = getNextCycleStartDateForReference(cycleType, cycleDay, cycleStart);
+  const cycleEnd = new Date(nextCycleStart);
+  cycleEnd.setDate(cycleEnd.getDate() - 1);
+  cycleEnd.setHours(23, 59, 59, 999);
+  return cycleEnd;
+}

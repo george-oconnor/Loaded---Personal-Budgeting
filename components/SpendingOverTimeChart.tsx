@@ -1,4 +1,4 @@
-import { getCycleStartDate, getNextCycleStartDate, getPreviousCycleStartDate } from "@/lib/budgetCycle";
+import { getCycleEndDateForCycleStart, getCycleStartDate, getCycleStartDateWithOffset, getNextCycleStartDate, getPreviousCycleStartDate } from "@/lib/budgetCycle";
 import type { Transaction } from "@/types/type";
 import * as Haptics from "expo-haptics";
 import { useMemo, useRef, useState } from "react";
@@ -13,6 +13,8 @@ interface SpendingOverTimeChartProps {
   monthlyBudget?: number;
   onDraggingChange?: (isDragging: boolean) => void;
   onDateSelected?: (date: string | null) => void;
+  cycleOffset?: number; // 0 = current cycle, -1 = previous cycle, -2 = two cycles ago, etc.
+  onSwipe?: (direction: "left" | "right") => void; // Callback for swipe gestures
 }
 
 export default function SpendingOverTimeChart({
@@ -23,6 +25,8 @@ export default function SpendingOverTimeChart({
   monthlyBudget = 0,
   onDraggingChange,
   onDateSelected,
+  cycleOffset = 0,
+  onSwipe,
 }: SpendingOverTimeChartProps) {
   const screenWidth = Dimensions.get("window").width - 40; // Account for padding
   const chartHeight = 220;
@@ -32,6 +36,8 @@ export default function SpendingOverTimeChart({
   const [selectedDate, setSelectedDate] = useState<string | null>(null);
   const [isDragging, setIsDragging] = useState(false);
   const [lastVibrationDate, setLastVibrationDate] = useState<string | null>(null);
+  const [touchStart, setTouchStart] = useState<{ x: number; y: number; time: number } | null>(null);
+  const [gestureMode, setGestureMode] = useState<"undecided" | "selecting" | "swiping">("undecided");
   const svgRef = useRef(null);
 
   // Helper to extract date string consistently
@@ -59,16 +65,19 @@ export default function SpendingOverTimeChart({
   };
 
   const chartData = useMemo(() => {
-    const cycleStart = getCycleStartDate(cycleType, cycleDay);
+    // Get the cycle start based on offset (0 = current, -1 = previous, etc.)
+    const cycleStart = getCycleStartDateWithOffset(cycleType, cycleDay, cycleOffset);
     const now = new Date();
     now.setHours(23, 59, 59, 999); // End of today to include all transactions today
     
-    // Use getNextCycleStartDate to get actual cycle end
-    const cycleEnd = getNextCycleStartDate(cycleType, cycleDay);
-    cycleEnd.setDate(cycleEnd.getDate() - 1); // Day before next cycle starts
+    // Get the cycle end for this specific cycle
+    const cycleEnd = getCycleEndDateForCycleStart(cycleType, cycleDay, cycleStart);
+    
+    // For past cycles, show data up to the cycle end; for current cycle, show up to today
+    const dataEndDate = cycleOffset < 0 ? cycleEnd : (now < cycleEnd ? now : cycleEnd);
 
-    // Calculate previous cycle dates using the correct function
-    const prevCycleStart = getPreviousCycleStartDate(cycleType, cycleDay);
+    // Calculate previous cycle dates (one cycle before the one we're viewing)
+    const prevCycleStart = getCycleStartDateWithOffset(cycleType, cycleDay, cycleOffset - 1);
     const prevCycleEnd = new Date(cycleStart);
     prevCycleEnd.setDate(prevCycleEnd.getDate() - 1);
 
@@ -76,7 +85,7 @@ export default function SpendingOverTimeChart({
     const cycleExpenses = transactions
       .filter((t) => {
         const d = new Date(t.date);
-        return t.kind === "expense" && !t.excludeFromAnalytics && d >= cycleStart && d <= now;
+        return t.kind === "expense" && !t.excludeFromAnalytics && d >= cycleStart && d <= dataEndDate;
       })
       .sort((a, b) => new Date(a.date).getTime() - new Date(b.date).getTime());
 
@@ -132,15 +141,15 @@ export default function SpendingOverTimeChart({
       const dateKey = getDateKey(currentDate);
       days.push(dateKey);
       
-      // Only accumulate spending up to today
-      if (currentDate <= now) {
+      // Only accumulate spending up to dataEndDate (today for current cycle, end for past cycles)
+      if (currentDate <= dataEndDate) {
         if (dailySpending[dateKey]) {
           cumulative += dailySpending[dateKey];
         }
         cumulativeAmounts.push(cumulative);
         axisEndIndex = days.length - 1;
       } else {
-        // After today, keep the last cumulative amount flat (no extrapolation)
+        // After dataEndDate, keep the last cumulative amount flat (no extrapolation)
         cumulativeAmounts.push(cumulative);
       }
       
@@ -186,7 +195,7 @@ export default function SpendingOverTimeChart({
     });
 
     return { points, prevPoints, maxAmount, days, cumulativeAmounts, prevCumulativeAmounts, axisEndIndex };
-  }, [transactions, cycleType, cycleDay]);
+  }, [transactions, cycleType, cycleDay, cycleOffset]);
 
   // Only show "no data" message if both current and previous cycle have no data
   if (chartData.points.length === 0 && chartData.prevPoints.length === 0) {
@@ -235,26 +244,114 @@ export default function SpendingOverTimeChart({
   // Handle chart tap
   const handleChartPress = (event: GestureResponderEvent) => {
     const touchX = event.nativeEvent.locationX;
+    const pageX = event.nativeEvent.pageX;
+    const pageY = event.nativeEvent.pageY;
+    
+    // Store the start position and time for gesture detection
+    setTouchStart({ x: pageX, y: pageY, time: Date.now() });
+    setGestureMode("undecided");
     
     if (touchX === undefined || chartData.points.length === 0) return;
 
-    setIsDragging(true);
-    onDraggingChange?.(true);
-    updateSelectedDateFromX(touchX);
+    // Don't start selecting immediately - wait to determine gesture type
   };
 
   const handleChartMove = (event: GestureResponderEvent) => {
-    if (!isDragging) return;
-    
+    const pageX = event.nativeEvent.pageX;
+    const pageY = event.nativeEvent.pageY;
     const touchX = event.nativeEvent.locationX;
-    if (touchX === undefined) return;
-
-    updateSelectedDateFromX(touchX);
+    
+    if (!touchStart) return;
+    
+    const deltaX = pageX - touchStart.x;
+    const deltaY = pageY - touchStart.y;
+    const absDeltaX = Math.abs(deltaX);
+    const absDeltaY = Math.abs(deltaY);
+    const timeDelta = Date.now() - touchStart.time;
+    
+    // If gesture mode is still undecided, determine what the user is doing
+    if (gestureMode === "undecided") {
+      // Wait for more movement before deciding - need at least 15px
+      if (absDeltaX < 15 && absDeltaY < 15) return;
+      
+      // If primarily horizontal movement (more horizontal than vertical), it's a swipe
+      const isHorizontalDominant = absDeltaX > absDeltaY * 1.2;
+      
+      if (isHorizontalDominant && absDeltaX > 20) {
+        // This is a swipe gesture
+        setGestureMode("swiping");
+        setSelectedDate(null);
+        onDateSelected?.(null);
+        setIsDragging(false);
+        onDraggingChange?.(false);
+      } else if (absDeltaY > absDeltaX || absDeltaX < 30) {
+        // Vertical or small movement - it's a selection gesture
+        setGestureMode("selecting");
+        setIsDragging(true);
+        onDraggingChange?.(true);
+        if (touchX !== undefined) {
+          updateSelectedDateFromX(touchX);
+        }
+      }
+      return;
+    }
+    
+    // If we're swiping, don't update the date selection
+    if (gestureMode === "swiping") return;
+    
+    // If we're selecting, update the selection
+    if (gestureMode === "selecting" && touchX !== undefined) {
+      updateSelectedDateFromX(touchX);
+    }
   };
 
-  const handleChartRelease = () => {
+  const handleChartRelease = (event: GestureResponderEvent) => {
+    const pageX = event.nativeEvent.pageX;
+    
+    // Check if this was a swipe gesture
+    if (touchStart && onSwipe && gestureMode === "swiping") {
+      const deltaX = pageX - touchStart.x;
+      const swipeThreshold = screenWidth * 0.12; // 12% of screen width
+      
+      if (Math.abs(deltaX) > swipeThreshold) {
+        if (deltaX > 0) {
+          // Swiped right - go to older
+          Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
+          onSwipe("right");
+        } else {
+          // Swiped left - go to newer
+          Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
+          onSwipe("left");
+        }
+      }
+    }
+    
+    // Also check for quick swipe that didn't move much during the gesture
+    // (user lifted finger quickly after starting)
+    if (touchStart && onSwipe && gestureMode === "undecided") {
+      const deltaX = pageX - touchStart.x;
+      const timeDelta = Date.now() - touchStart.time;
+      const velocity = Math.abs(deltaX) / timeDelta; // pixels per ms
+      
+      // Quick flick detection
+      if (Math.abs(deltaX) > 50 && velocity > 0.3) {
+        if (deltaX > 0) {
+          Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
+          onSwipe("right");
+        } else {
+          Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
+          onSwipe("left");
+        }
+      }
+    }
+    
+    setTouchStart(null);
+    setGestureMode("undecided");
     setIsDragging(false);
     onDraggingChange?.(false);
+    // Clear the selection when releasing
+    setSelectedDate(null);
+    onDateSelected?.(null);
   };
 
   const selectedPoint = selectedDate 
@@ -291,13 +388,16 @@ export default function SpendingOverTimeChart({
     <View className="bg-white py-6">
       <View
         onStartShouldSetResponder={() => true}
-        onMoveShouldSetResponder={() => isDragging}
+        onStartShouldSetResponderCapture={() => true}
+        onMoveShouldSetResponder={() => true}
+        onMoveShouldSetResponderCapture={() => true}
+        onResponderTerminationRequest={() => false}
         onResponderGrant={handleChartPress}
         onResponderMove={handleChartMove}
         onResponderRelease={handleChartRelease}
         className="items-center px-5"
       >
-        <Svg ref={svgRef} height={chartHeight} width={screenWidth}>
+        <Svg ref={svgRef} height={chartHeight} width={screenWidth} pointerEvents="none">
           <Defs>
             <LinearGradient id="areaGradient" x1="0%" y1="0%" x2="0%" y2="100%">
               <Stop offset="0%" stopColor={gradientStartColor} stopOpacity="0.3" />

@@ -1,6 +1,6 @@
 import TransactionListItem from "@/components/TransactionListItem";
 import { databases } from "@/lib/appwrite";
-import { getCycleEndDate, getCycleStartDate } from "@/lib/budgetCycle";
+import { getCycleEndDateForCycleStart, getCycleStartDateWithOffset } from "@/lib/budgetCycle";
 import { formatCurrency } from "@/lib/currencyFunctions";
 import { useHomeStore } from "@/store/useHomeStore";
 import { useSessionStore } from "@/store/useSessionStore";
@@ -65,26 +65,40 @@ type GroupedTransaction = {
 };
 
 export default function CategoryTransactionsScreen() {
-  const { categoryId, type } = useLocalSearchParams<{ categoryId?: string; type?: string }>();
+  const { categoryId, type, cycleOffset: cycleOffsetParam, merchantName } = useLocalSearchParams<{ 
+    categoryId?: string; 
+    type?: string;
+    cycleOffset?: string;
+    merchantName?: string;
+  }>();
   const { transactions, categories, summary, cycleType, cycleDay } = useHomeStore();
   const { user } = useSessionStore();
   const currency = summary?.currency ?? "USD";
+  
+  // Parse cycle offset (default to 0 = current cycle)
+  const cycleOffset = cycleOffsetParam ? parseInt(cycleOffsetParam, 10) : 0;
 
   const category = useMemo(
     () => categories.find((c) => c.id === categoryId),
     [categoryId, categories]
   );
 
-  // Get transactions for this category or type in this budget cycle
+  // Get transactions for this category/merchant in the specified budget cycle
   const filteredTransactions = useMemo(() => {
-    if (!categoryId && !type) return [];
+    if (!categoryId && !type && !merchantName) return [];
 
-    const cycleStart = getCycleStartDate(cycleType, cycleDay);
-    const cycleEnd = getCycleEndDate();
+    // Get cycle dates based on offset
+    const cycleStart = getCycleStartDateWithOffset(cycleType, cycleDay, cycleOffset);
+    const cycleEnd = getCycleEndDateForCycleStart(cycleType, cycleDay, cycleStart);
 
     return transactions.filter((t) => {
-      // Filter by category if provided
-      if (categoryId) {
+      // Filter by merchant name if provided
+      if (merchantName) {
+        if (t.title !== merchantName) return false;
+      }
+      
+      // Filter by category if provided (and no merchant filter)
+      if (categoryId && !merchantName) {
         const categoryMatch = t.categoryId === categoryId;
         if (!categoryMatch) return false;
       }
@@ -97,14 +111,14 @@ export default function CategoryTransactionsScreen() {
       // Exclude transactions flagged to be excluded from analytics
       if (t.excludeFromAnalytics) return false;
 
-      // If filtering by category only, only include expenses
-      if (categoryId && !type && t.kind !== "expense") return false;
+      // If filtering by category or merchant only, only include expenses
+      if ((categoryId || merchantName) && !type && t.kind !== "expense") return false;
 
-      // Match date range (in current cycle)
+      // Match date range (in specified cycle)
       const txDate = new Date(t.date);
       return txDate >= cycleStart && txDate <= cycleEnd;
     });
-  }, [categoryId, type, transactions, cycleType, cycleDay]);
+  }, [categoryId, merchantName, type, transactions, cycleType, cycleDay, cycleOffset]);
 
   // Group transactions by date
   const groupedTransactions: GroupedTransaction[] = useMemo(() => {
@@ -179,7 +193,28 @@ export default function CategoryTransactionsScreen() {
   );
 
   const isIncome = type === "income";
-  const isExpense = type === "expense" || categoryId;
+  const isExpense = type === "expense" || categoryId || merchantName;
+  
+  // Determine the title and subtitle
+  const headerTitle = useMemo(() => {
+    if (merchantName) return merchantName;
+    if (type) return type === "income" ? "Income" : "Expenses";
+    return category?.name || "Uncategorized";
+  }, [merchantName, type, category]);
+  
+  const headerSubtitle = useMemo(() => {
+    if (merchantName) return "Merchant";
+    if (type) return "Type";
+    return "Category";
+  }, [merchantName, type]);
+  
+  // Get cycle label for display
+  const cycleLabel = useMemo(() => {
+    if (cycleOffset === 0) return "this cycle";
+    if (cycleOffset === -1) return "last cycle";
+    const cycleStart = getCycleStartDateWithOffset(cycleType, cycleDay, cycleOffset);
+    return cycleStart.toLocaleDateString('en-US', { month: 'long', year: 'numeric' });
+  }, [cycleOffset, cycleType, cycleDay]);
 
   return (
     <SafeAreaView className="flex-1 bg-white">
@@ -193,17 +228,17 @@ export default function CategoryTransactionsScreen() {
             <Feather name="chevron-left" size={20} color="#7C3AED" />
             <Text className="text-primary text-base font-semibold">Back</Text>
           </Pressable>
-          <Text className="text-xs text-gray-500">{type ? "Type" : "Category"}</Text>
+          <Text className="text-xs text-gray-500">{headerSubtitle}</Text>
         </View>
         <View className="mt-1 items-end">
-          <Text className="text-2xl font-bold text-dark-100">
-            {type ? (type === "income" ? "Income" : "Expenses") : (category?.name || "Uncategorized")}
+          <Text className="text-2xl font-bold text-dark-100" numberOfLines={1}>
+            {headerTitle}
           </Text>
         </View>
       </View>
 
       {/* Category/Type Info */}
-        <View className="flex-row items-center gap-3 bg-gray-50 rounded-2xl p-4">
+        <View className="flex-row items-center gap-3 bg-gray-50 rounded-2xl p-4 mx-5">
           <View
             className="w-12 h-12 rounded-full items-center justify-center"
             style={{
@@ -218,7 +253,7 @@ export default function CategoryTransactionsScreen() {
           </View>
           <View className="flex-1">
             <Text className="text-gray-500 text-sm">
-              {isIncome ? "Total earned this cycle" : "Total spent this cycle"}
+              {isIncome ? `Total earned ${cycleLabel}` : `Total spent ${cycleLabel}`}
             </Text>
             <Text className={`text-xl font-bold ${isIncome ? "text-green-500" : "text-red-500"}`}>
               {formatCurrency(totalAmount / 100, currency)}
@@ -230,8 +265,13 @@ export default function CategoryTransactionsScreen() {
       {filteredTransactions.length === 0 ? (
         <View className="flex-1 items-center justify-center">
           <Feather name="inbox" size={48} color="#D1D5DB" />
-          <Text className="text-gray-400 text-base mt-4">
-            {type ? `No ${type} transactions this cycle` : "No transactions in this category this cycle"}
+          <Text className="text-gray-400 text-base mt-4 text-center px-8">
+            {merchantName 
+              ? `No transactions from ${merchantName} ${cycleLabel}`
+              : type 
+                ? `No ${type} transactions ${cycleLabel}` 
+                : `No transactions in this category ${cycleLabel}`
+            }
           </Text>
         </View>
       ) : (

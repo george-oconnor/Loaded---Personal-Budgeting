@@ -1,12 +1,14 @@
 import RemainingSpendCard from "@/components/RemainingSpendCard";
 import SpendingOverTimeChart from "@/components/SpendingOverTimeChart";
-import { getCycleBudgetStats, getCycleStartDate, getDaysRemainingInCycle, getNextCycleStartDate, getPreviousCycleStartDate, getTransactionsInCurrentCycle } from "@/lib/budgetCycle";
+import { getCycleBudgetStats, getCycleEndDateForCycleStart, getCycleStartDateWithOffset, getDaysRemainingInCycle } from "@/lib/budgetCycle";
 import { formatCurrency } from "@/lib/currencyFunctions";
+import { getMerchantIconUrl, getSuggestedMerchantIcon } from "@/lib/merchantIcons";
 import { useHomeStore } from "@/store/useHomeStore";
 import { Feather } from "@expo/vector-icons";
+import * as Haptics from "expo-haptics";
 import { router } from "expo-router";
 import { useEffect, useMemo, useRef, useState } from "react";
-import { Animated, Pressable, ScrollView, Text, TouchableWithoutFeedback, View } from "react-native";
+import { Animated, Image, Pressable, ScrollView, Text, TouchableWithoutFeedback, View } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
 
 // Map category names to default icons
@@ -58,13 +60,34 @@ function normalizeFeatherIconName(icon: string | undefined, categoryName: string
 export default function SpendAnalytics() {
   const { summary, transactions, categories, loading, cycleType, cycleDay } = useHomeStore();
   const [isDraggingChart, setIsDraggingChart] = useState(false);
-  const [viewMode, setViewMode] = useState<"category" | "daily">("category");
+  const [viewMode, setViewMode] = useState<"category" | "merchant" | "daily">("category");
   const [showViewDropdown, setShowViewDropdown] = useState(false);
   const [selectedOption, setSelectedOption] = useState<string | null>(null);
   const [selectedGraphDate, setSelectedGraphDate] = useState<string | null>(null);
+  const [cycleOffset, setCycleOffset] = useState(0); // 0 = current cycle, -1 = previous, etc.
   const dropdownAnim = useRef(new Animated.Value(0)).current;
   const budget = summary?.monthlyBudget ?? 0;
   const currency = summary?.currency ?? "USD";
+
+  // Get the cycle label based on offset
+  const getCycleLabel = useMemo(() => {
+    if (cycleOffset === 0) return "This Month";
+    if (cycleOffset === -1) return "Last Month";
+    
+    const cycleStart = getCycleStartDateWithOffset(cycleType, cycleDay, cycleOffset);
+    return cycleStart.toLocaleDateString('en-US', { month: 'long', year: 'numeric' });
+  }, [cycleOffset, cycleType, cycleDay]);
+
+  // Handle chart swipe to change cycle
+  const handleChartSwipe = (direction: "left" | "right") => {
+    if (direction === "right") {
+      // Swiped right - go to older cycle
+      setCycleOffset(prev => prev - 1);
+    } else if (direction === "left" && cycleOffset < 0) {
+      // Swiped left - go to newer (more recent) cycle
+      setCycleOffset(prev => prev + 1);
+    }
+  };
 
   // Helper to extract date string consistently
   const getDateKey = (date: Date) => {
@@ -76,6 +99,31 @@ export default function SpendAnalytics() {
     [transactions]
   );
 
+  // Get cycle dates for the selected offset
+  const selectedCycleDates = useMemo(() => {
+    const cycleStart = getCycleStartDateWithOffset(cycleType, cycleDay, cycleOffset);
+    const cycleEnd = getCycleEndDateForCycleStart(cycleType, cycleDay, cycleStart);
+    
+    // For current cycle, data goes up to end of today; for past cycles, up to cycle end
+    const now = new Date();
+    now.setHours(23, 59, 59, 999);
+    const dataEndDate = cycleOffset < 0 ? cycleEnd : (now < cycleEnd ? now : cycleEnd);
+    
+    return { cycleStart, cycleEnd, dataEndDate };
+  }, [cycleType, cycleDay, cycleOffset]);
+
+  // Get transactions for the selected cycle (with offset)
+  // For current cycle: up to end of today (matches chart)
+  // For past cycles: full cycle
+  const selectedCycleTransactions = useMemo(() => {
+    const { cycleStart, dataEndDate } = selectedCycleDates;
+    
+    return analyticsTransactions.filter((t) => {
+      const txDate = new Date(t.date);
+      return txDate >= cycleStart && txDate <= dataEndDate;
+    });
+  }, [analyticsTransactions, selectedCycleDates]);
+
   // Animate dropdown open/close
   useEffect(() => {
     Animated.spring(dropdownAnim, {
@@ -86,7 +134,7 @@ export default function SpendAnalytics() {
     }).start();
   }, [showViewDropdown]);
 
-  // Calculate budget statistics for the current cycle
+  // Calculate budget statistics for the current cycle (used for RemainingSpendCard when viewing current period)
   const { expenses: cycleExpenses, remaining, isOverspent, progress } = getCycleBudgetStats(
     analyticsTransactions,
     budget,
@@ -97,110 +145,84 @@ export default function SpendAnalytics() {
   const displayRemaining = Math.abs(remaining);
   const daysRemaining = getDaysRemainingInCycle(cycleType, cycleDay);
 
-  // Calculate total spent in current cycle
-  const totalSpentThisCycle = cycleExpenses;
-
-  // Calculate spending up to today for comparison
-  const spentUpToToday = useMemo(() => {
-    const endOfToday = new Date();
-    endOfToday.setHours(23, 59, 59, 999);
-    const currentCycleStart = getCycleStartDate(cycleType, cycleDay);
-    
-    const todayTransactions = analyticsTransactions.filter((t) => {
-      const txDate = new Date(t.date);
-      return (
-        t.kind === "expense" &&
-        txDate >= currentCycleStart &&
-        txDate <= endOfToday
-      );
-    });
-    
-    return todayTransactions.reduce((sum, t) => sum + Math.abs(t.amount), 0);
-  }, [analyticsTransactions, cycleType, cycleDay]);
-
-  // Calculate spending comparison with last month (same day)
+  // Calculate spending comparison with previous cycle (relative to selected cycle)
   const spendingComparison = useMemo(() => {
-    // Normalize to start of day for day counting
-    const now = new Date();
-    now.setHours(0, 0, 0, 0);
-    const currentCycleStart = getCycleStartDate(cycleType, cycleDay);
+    const { cycleStart, cycleEnd } = selectedCycleDates;
     
-    // IMPORTANT: Use getNextCycleStartDate to get actual cycle end, not end of month
-    const currentCycleEnd = getNextCycleStartDate(cycleType, cycleDay);
-    currentCycleEnd.setDate(currentCycleEnd.getDate() - 1); // Day before next cycle starts
+    // For current cycle (offset 0), compare up to end of today
+    // For past cycles, compare the full cycle (end of last day)
+    const isCurrentCycle = cycleOffset === 0;
     
-    const daysIntoCycle = Math.floor((now.getTime() - currentCycleStart.getTime()) / (1000 * 60 * 60 * 24));
-    const currentCycleDays = Math.floor((currentCycleEnd.getTime() - currentCycleStart.getTime()) / (1000 * 60 * 60 * 24)) + 1;
-    const percentThroughCycle = daysIntoCycle / currentCycleDays;
+    let compareUpTo: Date;
+    if (isCurrentCycle) {
+      // End of today - matches chart behavior
+      compareUpTo = new Date();
+      compareUpTo.setHours(23, 59, 59, 999);
+    } else {
+      // End of last day of cycle
+      compareUpTo = new Date(cycleEnd);
+      compareUpTo.setHours(23, 59, 59, 999);
+    }
+    
+    // Calculate days into the selected cycle (for percentage calculation)
+    const today = new Date();
+    today.setHours(0, 0, 0, 0);
+    const cycleStartNormalized = new Date(cycleStart);
+    cycleStartNormalized.setHours(0, 0, 0, 0);
+    
+    const daysIntoCycle = Math.floor((today.getTime() - cycleStartNormalized.getTime()) / (1000 * 60 * 60 * 24));
+    const totalCycleDays = Math.floor((cycleEnd.getTime() - cycleStart.getTime()) / (1000 * 60 * 60 * 24)) + 1;
+    const percentThroughCycle = isCurrentCycle 
+      ? Math.min(1, (daysIntoCycle + 1) / totalCycleDays) // +1 because we include today
+      : 1; // For completed cycles, use 100%
 
-    console.log('=== ANALYTICS CALCULATION ===');
-    console.log('Current cycle start:', currentCycleStart.toISOString());
-    console.log('Current cycle end:', currentCycleEnd.toISOString());
-    console.log('Days into cycle:', daysIntoCycle);
-    console.log('Current cycle days:', currentCycleDays);
-    console.log('Percent through cycle:', percentThroughCycle);
+    // Get spending in selected cycle - this is the TOTAL for the cycle
+    // For current cycle: all spending up to end of today
+    // For past cycles: all spending in the cycle
+    const selectedCycleSpent = selectedCycleTransactions
+      .filter(t => t.kind === "expense")
+      .reduce((sum, t) => sum + Math.abs(t.amount), 0);
 
-    // Use the already calculated spending up to today
-    const currentSpent = spentUpToToday;
-    console.log('Current spent (spentUpToToday):', currentSpent / 100);
-
-    // Get the actual previous cycle start date
-    const lastMonthCycleStart = getPreviousCycleStartDate(cycleType, cycleDay);
-    const lastMonthCycleEnd = new Date(currentCycleStart);
-    lastMonthCycleEnd.setDate(lastMonthCycleEnd.getDate() - 1);
-    const prevCycleDays = Math.floor((lastMonthCycleEnd.getTime() - lastMonthCycleStart.getTime()) / (1000 * 60 * 60 * 24)) + 1;
+    // Get the previous cycle (relative to selected cycle)
+    const prevCycleStart = getCycleStartDateWithOffset(cycleType, cycleDay, cycleOffset - 1);
+    const prevCycleEnd = getCycleEndDateForCycleStart(cycleType, cycleDay, prevCycleStart);
+    const prevCycleDays = Math.floor((prevCycleEnd.getTime() - prevCycleStart.getTime()) / (1000 * 60 * 60 * 24)) + 1;
     
-    console.log('Previous cycle start:', lastMonthCycleStart.toISOString());
-    console.log('Previous cycle end:', lastMonthCycleEnd.toISOString());
-    console.log('Previous cycle days:', prevCycleDays);
-    
-    // Calculate the equivalent day using percentage normalization
+    // Calculate the equivalent day in previous cycle using percentage normalization
     const prevCycleDayOffset = Math.floor(percentThroughCycle * prevCycleDays);
-    const lastMonthEquivalentDay = new Date(lastMonthCycleStart);
-    lastMonthEquivalentDay.setDate(lastMonthEquivalentDay.getDate() + prevCycleDayOffset);
-    lastMonthEquivalentDay.setHours(23, 59, 59, 999);
+    const prevEquivalentDay = new Date(prevCycleStart);
+    prevEquivalentDay.setDate(prevEquivalentDay.getDate() + prevCycleDayOffset);
+    prevEquivalentDay.setHours(23, 59, 59, 999);
 
-    console.log('Previous cycle day offset:', prevCycleDayOffset);
-    console.log('Equivalent day in previous cycle:', lastMonthEquivalentDay.toISOString());
-
-    // Get transactions from last month's cycle up to the equivalent day
-    const lastMonthTransactions = analyticsTransactions.filter((t) => {
+    // Get transactions from previous cycle up to the equivalent day
+    const prevCycleTransactions = analyticsTransactions.filter((t) => {
       const txDate = new Date(t.date);
       return (
         t.kind === "expense" &&
-        txDate >= lastMonthCycleStart &&
-        txDate <= lastMonthEquivalentDay
+        txDate >= prevCycleStart &&
+        txDate <= prevEquivalentDay
       );
     });
 
-    console.log('Previous cycle transaction count:', lastMonthTransactions.length);
-
-    const lastMonthSpent = lastMonthTransactions.reduce((sum, t) => sum + Math.abs(t.amount), 0);
-    console.log('Previous cycle spent:', lastMonthSpent / 100);
+    const prevCycleSpent = prevCycleTransactions.reduce((sum, t) => sum + Math.abs(t.amount), 0);
     
-    const difference = currentSpent - lastMonthSpent;
-    console.log('Difference (current - previous):', difference / 100);
-    
-    const percentageChange = lastMonthSpent > 0 ? ((difference / lastMonthSpent) * 100) : 0;
-    
-    console.log('=== END ANALYTICS CALCULATION ===');
+    const difference = selectedCycleSpent - prevCycleSpent;
+    const percentageChange = prevCycleSpent > 0 ? ((difference / prevCycleSpent) * 100) : 0;
 
     return {
       difference,
       percentageChange,
       isHigher: difference > 0,
-      lastMonthSpent,
+      prevCycleSpent,
+      selectedCycleSpent,
+      isCurrentCycle,
     };
-  }, [analyticsTransactions, cycleType, cycleDay, spentUpToToday]);
+  }, [analyticsTransactions, selectedCycleTransactions, selectedCycleDates, cycleType, cycleDay, cycleOffset]);
 
   // Calculate category spending stats
   const categoryStats = useMemo(() => {
-    // Filter transactions to current cycle
-    const cycleTransactions = getTransactionsInCurrentCycle(
-      analyticsTransactions,
-      cycleType,
-      cycleDay
-    );
+    // Use transactions from selected cycle (with offset)
+    const cycleTransactions = selectedCycleTransactions;
     
     const categorizedStats = categories
       .filter((cat) => cat.id !== "all")
@@ -245,13 +267,54 @@ export default function SpendAnalytics() {
       ...cat,
       percentage: totalExpenses > 0 ? (cat.totalSpent / totalExpenses) * 100 : 0,
     }));
-  }, [categories, analyticsTransactions, cycleType, cycleDay]);
+  }, [categories, selectedCycleTransactions]);
 
-  // Group transactions by day
+  // Calculate merchant spending stats
+  const merchantStats = useMemo(() => {
+    // Use transactions from selected cycle (with offset)
+    const cycleTransactions = selectedCycleTransactions;
+    
+    const merchantMap = new Map<string, { name: string; transactions: Transaction[]; totalSpent: number; }>();
+    
+    cycleTransactions
+      .filter(t => t.kind === "expense")
+      .forEach(transaction => {
+        const merchantName = transaction.title || "Unknown Merchant";
+        
+        if (!merchantMap.has(merchantName)) {
+          merchantMap.set(merchantName, {
+            name: merchantName,
+            transactions: [],
+            totalSpent: 0,
+          });
+        }
+        
+        const merchant = merchantMap.get(merchantName)!;
+        merchant.transactions.push(transaction);
+        merchant.totalSpent += Math.abs(transaction.amount);
+      });
+    
+    const merchantArray = Array.from(merchantMap.values())
+      .map(merchant => ({
+        ...merchant,
+        count: merchant.transactions.length,
+      }))
+      .filter(merchant => merchant.totalSpent > 0)
+      .sort((a, b) => b.totalSpent - a.totalSpent);
+    
+    const totalExpenses = merchantArray.reduce((sum, merchant) => sum + merchant.totalSpent, 0);
+    
+    return merchantArray.map(merchant => ({
+      ...merchant,
+      percentage: totalExpenses > 0 ? (merchant.totalSpent / totalExpenses) * 100 : 0,
+    }));
+  }, [selectedCycleTransactions]);
+
+  // Group transactions by day for selected cycle
   const dailyTransactions = useMemo(() => {
     const grouped = new Map<string, Transaction[]>();
     
-    analyticsTransactions
+    selectedCycleTransactions
       .filter(t => t.kind === "expense")
       .forEach((t) => {
         const date = new Date(t.date);
@@ -271,7 +334,7 @@ export default function SpendAnalytics() {
         total: txs.reduce((sum, t) => sum + t.amount, 0),
       }))
       .sort((a, b) => b.date.localeCompare(a.date));
-  }, [analyticsTransactions]);
+  }, [selectedCycleTransactions]);
 
   return (
     <SafeAreaView className="flex-1 bg-white">
@@ -289,8 +352,28 @@ export default function SpendAnalytics() {
           <Text className="text-xs text-gray-500">Budget Period</Text>
         </View>
         
-        <View className="mt-1 items-end">
-          <Text className="text-2xl font-bold text-dark-100">This Month</Text>
+        <View className="mt-1 flex-row items-center justify-end">
+          <Pressable 
+            onPress={() => {
+              Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
+              setCycleOffset(prev => prev - 1);
+            }}
+            className="mr-2 active:opacity-70"
+          >
+            <Feather name="chevron-left" size={24} color="#7C3AED" />
+          </Pressable>
+          <Text className="text-2xl font-bold text-dark-100">{getCycleLabel}</Text>
+          {cycleOffset < 0 && (
+            <Pressable 
+              onPress={() => {
+                Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
+                setCycleOffset(prev => prev + 1);
+              }}
+              className="ml-2 active:opacity-70"
+            >
+              <Feather name="chevron-right" size={24} color="#7C3AED" />
+            </Pressable>
+          )}
         </View>
       </View>
 
@@ -307,21 +390,21 @@ export default function SpendAnalytics() {
             style={{
               lineHeight: 36,
               color: (() => {
-                const isMoreThanLastMonth = spendingComparison.isHigher;
-                const isOverBudget = isOverspent;
+                const isMoreThanPrevCycle = spendingComparison.isHigher;
+                const isOverBudget = spendingComparison.selectedCycleSpent > budget;
                 
-                // Red: more than last month AND over budget
-                if (isMoreThanLastMonth && isOverBudget) return "#EF4444";
-                // Green: less than last month AND below budget
-                if (!isMoreThanLastMonth && !isOverBudget) return "#10B981";
+                // Red: more than previous cycle AND over budget
+                if (isMoreThanPrevCycle && isOverBudget) return "#EF4444";
+                // Green: less than previous cycle AND below budget
+                if (!isMoreThanPrevCycle && !isOverBudget) return "#10B981";
                 // Orange: only one condition is true
                 return "#F97316";
               })()
             }}
           >
-            {formatCurrency(spentUpToToday / 100, currency)}
+            {formatCurrency(spendingComparison.selectedCycleSpent / 100, currency)}
           </Text>
-          <View className="flex-row items-center">
+          <View className="flex-row items-center flex-wrap">
             <Feather 
               name={spendingComparison.isHigher ? "trending-up" : "trending-down"} 
               size={14} 
@@ -334,22 +417,38 @@ export default function SpendAnalytics() {
               {spendingComparison.isHigher ? "+" : ""}{formatCurrency(Math.abs(spendingComparison.difference) / 100, currency)}
               {" "}({spendingComparison.isHigher ? "+" : ""}{spendingComparison.percentageChange.toFixed(1)}%)
             </Text>
-            <Text className="text-xs text-gray-500 ml-1">vs same period last month</Text>
+            <Text className="text-xs text-gray-500 ml-1">
+              {spendingComparison.isCurrentCycle 
+                ? "vs same point last cycle"
+                : "vs previous cycle"
+              }
+            </Text>
           </View>
         </View>
 
-        {/* Spending Over Time Chart - Full Width */}
-        <SpendingOverTimeChart
-          transactions={analyticsTransactions}
-          cycleType={cycleType}
-          cycleDay={cycleDay}
-          currency={summary?.currency}
-          monthlyBudget={budget}
-          onDraggingChange={setIsDraggingChart}
-          onDateSelected={setSelectedGraphDate}
-        />
+        {/* Spending Over Time Chart - With swipe navigation */}
+        <View>
+          <SpendingOverTimeChart
+            transactions={analyticsTransactions}
+            cycleType={cycleType}
+            cycleDay={cycleDay}
+            currency={summary?.currency}
+            monthlyBudget={budget}
+            onDraggingChange={setIsDraggingChart}
+            onDateSelected={setSelectedGraphDate}
+            cycleOffset={cycleOffset}
+            onSwipe={handleChartSwipe}
+          />
+          
+          {/* Swipe hint indicator */}
+          <View className="flex-row justify-center items-center mt-2 gap-1">
+            <Feather name="chevron-left" size={14} color="#D1D5DB" />
+            <Text className="text-xs text-gray-300">Swipe to change period</Text>
+            <Feather name="chevron-right" size={14} color="#D1D5DB" />
+          </View>
+        </View>
 
-        {/* Remaining Spend Card */}
+        {/* Remaining Spend Card - Works for any cycle */}
         <View className="px-5 mt-5">
           <RemainingSpendCard 
             summary={summary}
@@ -358,43 +457,49 @@ export default function SpendAnalytics() {
             cycleType={cycleType}
             cycleDay={cycleDay}
             disableNavigation={true}
+            cycleOffset={cycleOffset}
           />
         </View>
 
         {/* Category Breakdown / Daily Transactions */}
-        <TouchableWithoutFeedback onPress={() => showViewDropdown && setShowViewDropdown(false)}>
-          <View className="mt-6 px-5 pb-6">
-            <View className="relative">
-              <Pressable 
-                onPress={() => {
-                  console.log("Header clicked, current dropdown state:", showViewDropdown);
-                  setShowViewDropdown(!showViewDropdown);
-                }}
-                className="flex-row items-center justify-between mb-3 active:opacity-70"
-              >
-                <Text className={`text-lg font-bold ${showViewDropdown ? "text-gray-400" : "text-dark-100"}`}>
-                  {viewMode === "category" ? "Spending by Category" : "Daily Transactions"}
-                </Text>
-                <Feather 
-                  name={showViewDropdown ? "chevron-up" : "chevron-down"} 
-                  size={20} 
-                  color={showViewDropdown ? "#9CA3AF" : "#181C2E"}
-                />
-              </Pressable>
+        <View className="mt-6 pb-6 relative">
+          <TouchableWithoutFeedback onPress={() => showViewDropdown && setShowViewDropdown(false)}>
+            <View>
+              <View className="px-5">
+                <Pressable 
+                  onPress={() => {
+                    console.log("Header clicked, current dropdown state:", showViewDropdown);
+                    setShowViewDropdown(!showViewDropdown);
+                  }}
+                  className="flex-row items-center justify-between mb-3 active:opacity-70"
+                >
+                  <Text className={`text-lg font-bold ${showViewDropdown ? "text-gray-400" : "text-dark-100"}`}>
+                    {viewMode === "category" ? "Spending by Category" : viewMode === "merchant" ? "Spending by Merchant" : "Daily Transactions"}
+                  </Text>
+                  <Feather 
+                    name={showViewDropdown ? "chevron-up" : "chevron-down"} 
+                    size={20} 
+                    color={showViewDropdown ? "#9CA3AF" : "#181C2E"}
+                  />
+                </Pressable>
+              </View>
+            </View>
+          </TouchableWithoutFeedback>
 
-              {/* Dropdown Menu - Positioned absolutely below */}
+              {/* Dropdown Menu - Full width, positioned absolutely below */}
               <Animated.View 
                 pointerEvents={showViewDropdown ? 'auto' : 'none'}
-                className="absolute top-full mt-2 rounded-2xl overflow-hidden z-50" 
+                className="absolute left-0 right-0 mx-5 rounded-2xl overflow-hidden z-50" 
                 style={{ 
-                  backgroundColor: 'rgba(255, 255, 255, 0.7)',
+                  top: 36,
+                  backgroundColor: '#FFFFFF',
                   shadowColor: '#7C3AED',
                   shadowOffset: { width: 0, height: 8 },
                   shadowOpacity: 0.3,
                   shadowRadius: 20,
                   elevation: 10,
-                  borderWidth: 1,
-                  borderColor: 'rgba(255, 255, 255, 0.5)',
+                  borderWidth: 2,
+                  borderColor: '#E5E7EB',
                   opacity: dropdownAnim,
                   transform: [
                     {
@@ -413,7 +518,7 @@ export default function SpendAnalytics() {
                   transformOrigin: 'top',
                 }}
               >
-                <View style={{ backgroundColor: 'rgba(124, 58, 237, 0.08)' }}>
+                <View style={{ backgroundColor: '#FFFFFF' }}>
                   <Pressable
                     onPress={() => {
                       setViewMode("category");
@@ -426,6 +531,20 @@ export default function SpendAnalytics() {
                   >
                     <Text className={`${viewMode === "category" ? "font-bold text-primary" : "text-dark-100"}`}>
                       Spending by Category
+                    </Text>
+                  </Pressable>
+                  <Pressable
+                    onPress={() => {
+                      setViewMode("merchant");
+                      setSelectedOption("merchant");
+                      setShowViewDropdown(false);
+                      setTimeout(() => setSelectedOption(null), 300);
+                    }}
+                    className={`px-6 py-4 border-b active:opacity-70 ${selectedOption === "merchant" ? "bg-purple-100" : ""}`}
+                    style={{ borderBottomColor: 'rgba(124, 58, 237, 0.15)', borderBottomWidth: 1 }}
+                  >
+                    <Text className={`${viewMode === "merchant" ? "font-bold text-primary" : "text-dark-100"}`}>
+                      Spending by Merchant
                     </Text>
                   </Pressable>
                   <Pressable
@@ -443,8 +562,9 @@ export default function SpendAnalytics() {
                   </Pressable>
                 </View>
               </Animated.View>
-            </View>
 
+          {/* Content with opacity effect when dropdown is open */}
+          <View className="px-5" style={{ opacity: showViewDropdown ? 0.3 : 1 }}>
           {/* Category View */}
           {viewMode === "category" && (
             categoryStats.length === 0 ? (
@@ -454,7 +574,7 @@ export default function SpendAnalytics() {
                 {categoryStats.map((cat) => (
                   <Pressable
                     key={cat.id}
-                    onPress={() => router.push(`/category-transactions?categoryId=${cat.id}`)}
+                    onPress={() => router.push(`/category-transactions?categoryId=${cat.id}&cycleOffset=${cycleOffset}`)}
                     className="active:opacity-70"
                   >
                     <View className="flex-row items-center rounded-2xl bg-gray-50 px-4 py-4 border border-gray-100">
@@ -479,6 +599,34 @@ export default function SpendAnalytics() {
                     </View>
                   </Pressable>
                 ))}
+              </View>
+            )
+          )}
+
+          {/* Merchant View */}
+          {viewMode === "merchant" && (
+            merchantStats.length === 0 ? (
+              <Text className="text-gray-400 text-sm">No spending data available</Text>
+            ) : (
+              <View className="gap-3">
+                {merchantStats.map((merchant, index) => {
+                  const firstTransaction = merchant.transactions[0];
+                  const category = categories.find(c => c.id === firstTransaction?.categoryId);
+                  return (
+                    <MerchantStatItem
+                      key={`${merchant.name}-${index}`}
+                      merchantName={merchant.name}
+                      totalSpent={merchant.totalSpent}
+                      count={merchant.count}
+                      percentage={merchant.percentage}
+                      currency={currency}
+                      categoryColor={category?.color}
+                      categoryIcon={normalizeFeatherIconName(category?.icon as any, category?.name)}
+                      categoryName={category?.name}
+                      onPress={() => router.push(`/category-transactions?merchantName=${encodeURIComponent(merchant.name)}&cycleOffset=${cycleOffset}`)}
+                    />
+                  );
+                })}
               </View>
             )
           )}
@@ -535,8 +683,124 @@ export default function SpendAnalytics() {
             )
           )}
           </View>
-        </TouchableWithoutFeedback>
+        </View>
       </ScrollView>
     </SafeAreaView>
   );
+}
+
+// Component for rendering a merchant stat item with icon waterfall logic
+function MerchantStatItem({
+  merchantName,
+  totalSpent,
+  count,
+  percentage,
+  currency,
+  categoryColor,
+  categoryIcon,
+  categoryName,
+  onPress,
+}: {
+  merchantName: string;
+  totalSpent: number;
+  count: number;
+  percentage: number;
+  currency: string;
+  categoryColor?: string;
+  categoryIcon: string;
+  categoryName?: string;
+  onPress?: () => void;
+}) {
+  const [tldIndex, setTldIndex] = useState(0);
+  const [iconFailed, setIconFailed] = useState(false);
+  const [crowdSourcedIconUrl, setCrowdSourcedIconUrl] = useState<string | null>(null);
+  const [crowdSourcedIconFailed, setCrowdSourcedIconFailed] = useState(false);
+
+  // Load crowd-sourced icon suggestion
+  useEffect(() => {
+    getSuggestedMerchantIcon(merchantName, 64)
+      .then(url => {
+        setCrowdSourcedIconUrl(url);
+        setCrowdSourcedIconFailed(false);
+      })
+      .catch(() => setCrowdSourcedIconUrl(null));
+  }, [merchantName]);
+
+  // Built-in icon (fallback)
+  const builtInIconUrl = iconFailed ? null : getMerchantIconUrl(merchantName, 64, tldIndex);
+  // Prioritize crowd-sourced icon (if not failed), then fall back to built-in
+  const effectiveCrowdSourcedUrl = (crowdSourcedIconUrl && !crowdSourcedIconFailed) ? crowdSourcedIconUrl : null;
+  const merchantIconUrl = effectiveCrowdSourcedUrl || (iconFailed ? null : builtInIconUrl);
+
+  const hasMerchantIcon = merchantIconUrl !== null;
+  const isCrowdSourced = effectiveCrowdSourcedUrl && merchantIconUrl === effectiveCrowdSourcedUrl;
+
+  const handleImageError = () => {
+    // If this is a crowd-sourced icon, mark it as failed so we fall back
+    if (isCrowdSourced) {
+      setCrowdSourcedIconFailed(true);
+      return;
+    }
+    // Try next TLD (ie -> com -> co.uk)
+    if (tldIndex < 2) {
+      setTldIndex(tldIndex + 1);
+      return;
+    }
+    // After all TLDs exhausted, fall back to category icon
+    setIconFailed(true);
+  };
+
+  const backgroundColor = hasMerchantIcon ? "#FFFFFF" : `${categoryColor || "#EF4444"}20`;
+
+  const content = (
+    <View className="flex-row items-center rounded-2xl bg-gray-50 px-4 py-4 border border-gray-100">
+      <View 
+        className="w-10 h-10 rounded-full items-center justify-center mr-3"
+        style={{ 
+          backgroundColor, 
+          borderWidth: hasMerchantIcon ? 1 : 0, 
+          borderColor: '#E5E7EB' 
+        }}
+      >
+        {hasMerchantIcon ? (
+          <Image 
+            source={{ uri: merchantIconUrl }}
+            style={{ width: 32, height: 32, borderRadius: 16 }}
+            resizeMode="contain"
+            onError={handleImageError}
+          />
+        ) : (
+          <Feather
+            name={categoryIcon as any}
+            size={18}
+            color={categoryColor || "#EF4444"}
+          />
+        )}
+      </View>
+      <View className="flex-1">
+        <Text className="font-semibold text-dark-100" numberOfLines={1}>
+          {merchantName}
+        </Text>
+        <Text className="text-xs text-gray-500 mt-1">
+          {count} transaction{count !== 1 ? "s" : ""}
+        </Text>
+      </View>
+      <View className="items-end">
+        <Text className="font-bold text-red-500">
+          {formatCurrency(totalSpent / 100, currency)}
+        </Text>
+        <Text className="text-xs text-gray-500 mt-1">{percentage.toFixed(1)}%</Text>
+      </View>
+    </View>
+  );
+
+  if (onPress) {
+    return (
+      <Pressable onPress={onPress} className="active:opacity-70">
+        {content}
+      </Pressable>
+    );
+  }
+
+  return content;
 }

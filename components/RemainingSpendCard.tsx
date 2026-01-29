@@ -1,9 +1,9 @@
-import { getCycleBudgetStats, getDaysRemainingInCycle } from "@/lib/budgetCycle";
+import { getCycleEndDateForCycleStart, getCycleStartDateWithOffset, getDaysRemainingInCycle } from "@/lib/budgetCycle";
 import { formatCurrency } from "@/lib/currencyFunctions";
 import type { Summary, Transaction } from "@/types/type";
 import { Feather } from "@expo/vector-icons";
 import { router } from "expo-router";
-import { useState } from "react";
+import { useMemo, useState } from "react";
 import { Pressable, Text, View } from "react-native";
 
 export default function RemainingSpendCard({
@@ -13,6 +13,7 @@ export default function RemainingSpendCard({
   cycleType = "first_working_day",
   cycleDay,
   disableNavigation = false,
+  cycleOffset = 0,
 }: {
   summary: Summary | null;
   transactions: Transaction[];
@@ -20,6 +21,7 @@ export default function RemainingSpendCard({
   cycleType?: "first_working_day" | "last_working_day" | "specific_date" | "last_friday";
   cycleDay?: number;
   disableNavigation?: boolean;
+  cycleOffset?: number;
 }) {
   const currency = summary?.currency ?? "USD";
   const budget = summary?.monthlyBudget ?? 0;
@@ -28,16 +30,46 @@ export default function RemainingSpendCard({
   const [pressed, setPressed] = useState(false);
   const [cardPressed, setCardPressed] = useState(false);
   
-  // Calculate budget statistics for the current cycle
-  const { expenses: cycleExpenses, remaining, isOverspent, progress } = getCycleBudgetStats(
-    transactions,
-    budget,
-    cycleType,
-    cycleDay
-  );
+  // Calculate budget statistics for the selected cycle (with offset support)
+  const { cycleExpenses, remaining, isOverspent, progress, daysRemaining, isCompletedCycle } = useMemo(() => {
+    const cycleStart = getCycleStartDateWithOffset(cycleType, cycleDay, cycleOffset);
+    const cycleEnd = getCycleEndDateForCycleStart(cycleType, cycleDay, cycleStart);
+    
+    // Filter transactions for this specific cycle
+    const cycleTransactions = transactions.filter((t) => {
+      const txDate = new Date(t.date);
+      return txDate >= cycleStart && txDate <= cycleEnd;
+    });
+    
+    const expenses = cycleTransactions
+      .filter(t => t.kind === "expense")
+      .reduce((sum, t) => sum + Math.abs(t.amount), 0);
+    
+    const rem = budget - expenses;
+    const over = rem < 0;
+    const prog = budget > 0 ? Math.min(1, expenses / budget) : 0;
+    
+    // Calculate days remaining (only relevant for current cycle)
+    const now = new Date();
+    now.setHours(23, 59, 59, 999);
+    const isCompleted = cycleOffset < 0 || now > cycleEnd;
+    
+    let days = 0;
+    if (!isCompleted) {
+      days = getDaysRemainingInCycle(cycleType, cycleDay);
+    }
+    
+    return {
+      cycleExpenses: expenses,
+      remaining: rem,
+      isOverspent: over,
+      progress: prog,
+      daysRemaining: days,
+      isCompletedCycle: isCompleted,
+    };
+  }, [transactions, budget, cycleType, cycleDay, cycleOffset]);
   
   const displayRemaining = Math.abs(remaining);
-  const daysRemaining = getDaysRemainingInCycle(cycleType, cycleDay);
 
   if (noBudgetSet) {
     return (
@@ -90,7 +122,10 @@ export default function RemainingSpendCard({
         </View>
         <View className="flex-row justify-between mt-2">
           <Text className="text-white/80 text-xs">
-            {daysRemaining} {daysRemaining === 1 ? "day" : "days"} remaining
+            {isCompletedCycle 
+              ? "Cycle completed" 
+              : `${daysRemaining} ${daysRemaining === 1 ? "day" : "days"} remaining`
+            }
           </Text>
           <Text className="text-white/80 text-xs">Budget: {formatCurrency(budget / 100, currency)}</Text>
         </View>
