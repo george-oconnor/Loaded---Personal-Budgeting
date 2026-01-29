@@ -8,6 +8,7 @@ const NOTIFICATION_PERMISSION_KEY = '@notification_permission';
 const PUSH_TOKEN_KEY = '@push_token';
 const LAST_IMPORT_DATES_KEY = '@last_import_dates';
 const SCHEDULED_NOTIFICATIONS_KEY = '@scheduled_notifications';
+const DISMISSED_IMPORT_BANNERS_KEY = '@dismissed_import_banners';
 
 // Notification identifiers
 export const NOTIFICATION_IDS = {
@@ -170,6 +171,49 @@ export function daysSinceImport(lastImportDate: string): number {
   const now = new Date();
   const diffMs = now.getTime() - lastImport.getTime();
   return Math.floor(diffMs / (24 * 60 * 60 * 1000));
+}
+
+/**
+ * Mark an import banner as dismissed for a specific stale state
+ * Stores the dismissal with the last import date so we don't show again until it refreshes
+ */
+export async function dismissImportBanner(accountKey: string, lastImportDate: string): Promise<void> {
+  try {
+    const stored = await AsyncStorage.getItem(DISMISSED_IMPORT_BANNERS_KEY);
+    const dismissed: Record<string, string> = stored ? JSON.parse(stored) : {};
+    
+    // Store the last import date at time of dismissal
+    dismissed[accountKey] = lastImportDate;
+    
+    await AsyncStorage.setItem(DISMISSED_IMPORT_BANNERS_KEY, JSON.stringify(dismissed));
+  } catch (error) {
+    console.error('Failed to dismiss import banner:', error);
+    captureException(error instanceof Error ? error : new Error(String(error)));
+  }
+}
+
+/**
+ * Check if a stale import banner should be shown
+ * Returns false if the user dismissed this specific stale state
+ */
+export async function shouldShowImportBanner(
+  accountKey: string,
+  currentLastImportDate: string
+): Promise<boolean> {
+  try {
+    const stored = await AsyncStorage.getItem(DISMISSED_IMPORT_BANNERS_KEY);
+    if (!stored) return true;
+    
+    const dismissed: Record<string, string> = JSON.parse(stored);
+    const dismissedForDate = dismissed[accountKey];
+    
+    // If never dismissed, or dismissed for a different (older) import date, show the banner
+    // This means if they import and it goes stale again, we'll show it again
+    return !dismissedForDate || dismissedForDate !== currentLastImportDate;
+  } catch (error) {
+    console.error('Failed to check dismissed import banners:', error);
+    return true; // Show by default on error
+  }
 }
 
 // Budget status types

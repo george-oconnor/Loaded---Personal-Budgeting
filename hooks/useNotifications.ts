@@ -194,22 +194,14 @@ export function useNotifications() {
     try {
       const staleAccounts = await getStaleAccounts(STALE_IMPORT_THRESHOLD_DAYS);
 
+      // Only send push notifications for stale imports, no in-app notifications
       for (const account of staleAccounts) {
         const days = daysSinceImport(account.lastImportDate);
         
-        // Create in-app notification
-        await addNotification(createImportReminderNotification(
-          account.accountName,
-          account.provider,
-          days
-        ));
-
-        // Send push notification for very stale accounts (3+ weeks)
-        if (days >= 21) {
-          const enabled = await areNotificationsEnabled();
-          if (enabled) {
-            await scheduleImportReminder(account.accountName, account.provider, days);
-          }
+        // Send push notification for stale accounts
+        const enabled = await areNotificationsEnabled();
+        if (enabled) {
+          await scheduleImportReminder(account.accountName, account.provider, days);
         }
       }
 

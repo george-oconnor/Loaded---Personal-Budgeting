@@ -1,4 +1,4 @@
-import { daysSinceImport, getStaleAccounts, type AccountImportRecord } from '@/lib/notifications';
+import { daysSinceImport, dismissImportBanner, getStaleAccounts, shouldShowImportBanner, type AccountImportRecord } from '@/lib/notifications';
 import { useSessionStore } from '@/store/useSessionStore';
 import { Feather } from '@expo/vector-icons';
 import { router } from 'expo-router';
@@ -34,9 +34,19 @@ export function ImportReminderBanner() {
       if (!user?.id) return;
       
       const stale = await getStaleAccounts(14); // 2 weeks threshold
-      setStaleAccounts(stale);
       
-      if (stale.length > 0 && !dismissed) {
+      // Filter out accounts that have been dismissed for their current stale state
+      const accountsToShow: AccountImportRecord[] = [];
+      for (const account of stale) {
+        const shouldShow = await shouldShowImportBanner(account.accountKey, account.lastImportDate);
+        if (shouldShow) {
+          accountsToShow.push(account);
+        }
+      }
+      
+      setStaleAccounts(accountsToShow);
+      
+      if (accountsToShow.length > 0 && !dismissed) {
         Animated.timing(fadeAnim, {
           toValue: 1,
           duration: 300,
@@ -50,7 +60,12 @@ export function ImportReminderBanner() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [user?.id, dismissed]);
 
-  const handleDismiss = () => {
+  const handleDismiss = async () => {
+    // Mark all currently shown stale accounts as dismissed for their current state
+    for (const account of staleAccounts) {
+      await dismissImportBanner(account.accountKey, account.lastImportDate);
+    }
+    
     Animated.timing(fadeAnim, {
       toValue: 0,
       duration: 200,
