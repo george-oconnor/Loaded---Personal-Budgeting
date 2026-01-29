@@ -21,10 +21,9 @@ const IMPORT_OPTIONS = [
   {
     id: "csv",
     name: "CSV File",
-    icon: "file",
-    description: "Import from a CSV file",
+    icon: "file-text",
+    description: "Import from any bank's CSV export with AI-powered format detection",
     color: "#10B981",
-    comingSoon: true,
   },
   {
     id: "manual",
@@ -45,7 +44,7 @@ export default function ImportScreen() {
         router.push("/import/revolut");
         break;
       case "csv":
-        console.log("CSV import coming soon");
+        router.push("/import/csv" as any);
         break;
       case "manual":
         router.push("/add-transaction");
