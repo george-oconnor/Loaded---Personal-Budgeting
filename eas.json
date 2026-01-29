@@ -6,7 +6,9 @@
   "build": {
     "preview": {
       "env": {
-        "EXPO_PUBLIC_APPWRITE_TABLE_ICON_VOTES": "icon_votes"
+        "EXPO_PUBLIC_APPWRITE_TABLE_ICON_VOTES": "icon_votes",
+        "EXPO_PUBLIC_APPWRITE_TABLE_ACCOUNT_IMPORTS": "accountImports",
+        "EXPO_PUBLIC_APPWRITE_TABLE_USER_PREFERENCES": "userPreferences"
       },
       "ios": {
         "simulator": true
@@ -14,7 +16,9 @@
     },
     "preview2": {
       "env": {
-        "EXPO_PUBLIC_APPWRITE_TABLE_ICON_VOTES": "icon_votes"
+        "EXPO_PUBLIC_APPWRITE_TABLE_ICON_VOTES": "icon_votes",
+        "EXPO_PUBLIC_APPWRITE_TABLE_ACCOUNT_IMPORTS": "accountImports",
+        "EXPO_PUBLIC_APPWRITE_TABLE_USER_PREFERENCES": "userPreferences"
       },
       "android": {
         "gradleCommand": ":app:assembleRelease"
@@ -22,13 +26,17 @@
     },
     "preview3": {
       "env": {
-        "EXPO_PUBLIC_APPWRITE_TABLE_ICON_VOTES": "icon_votes"
+        "EXPO_PUBLIC_APPWRITE_TABLE_ICON_VOTES": "icon_votes",
+        "EXPO_PUBLIC_APPWRITE_TABLE_ACCOUNT_IMPORTS": "accountImports",
+        "EXPO_PUBLIC_APPWRITE_TABLE_USER_PREFERENCES": "userPreferences"
       },
       "developmentClient": true
     },
     "production": {
       "env": {
-        "EXPO_PUBLIC_APPWRITE_TABLE_ICON_VOTES": "icon_votes"
+        "EXPO_PUBLIC_APPWRITE_TABLE_ICON_VOTES": "icon_votes",
+        "EXPO_PUBLIC_APPWRITE_TABLE_ACCOUNT_IMPORTS": "accountImports",
+        "EXPO_PUBLIC_APPWRITE_TABLE_USER_PREFERENCES": "userPreferences"
       },
       "ios": {
         "resourceClass": "medium"
@@ -36,7 +44,9 @@
     },
     "testflight": {
       "env": {
-        "EXPO_PUBLIC_APPWRITE_TABLE_ICON_VOTES": "icon_votes"
+        "EXPO_PUBLIC_APPWRITE_TABLE_ICON_VOTES": "icon_votes",
+        "EXPO_PUBLIC_APPWRITE_TABLE_ACCOUNT_IMPORTS": "accountImports",
+        "EXPO_PUBLIC_APPWRITE_TABLE_USER_PREFERENCES": "userPreferences"
       },
       "ios": {
         "resourceClass": "medium"
