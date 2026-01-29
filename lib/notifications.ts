@@ -1,6 +1,7 @@
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import * as Notifications from 'expo-notifications';
 import { AppState } from 'react-native';
+import { getAccountImports, getUserPreferences, saveAccountImport, saveUserPreferences } from './appwrite';
 import { captureException } from './sentry';
 
 // Storage keys
@@ -32,8 +33,9 @@ Notifications.setNotificationHandler({
 
 /**
  * Request notification permissions from the user
+ * Syncs preference to backend and clears scheduled notifications if denied
  */
-export async function requestNotificationPermissions(): Promise<boolean> {
+export async function requestNotificationPermissions(userId?: string): Promise<boolean> {
   try {
     const { status: existingStatus } = await Notifications.getPermissionsAsync();
     let finalStatus = existingStatus;
@@ -46,6 +48,22 @@ export async function requestNotificationPermissions(): Promise<boolean> {
     const granted = finalStatus === 'granted';
     await AsyncStorage.setItem(NOTIFICATION_PERMISSION_KEY, granted ? 'granted' : 'denied');
     
+    // Sync to backend if userId is provided
+    if (userId) {
+      try {
+        await saveUserPreferences(userId, {
+          notificationsEnabled: granted,
+        });
+      } catch (backendErr) {
+        console.warn('Failed to sync notification preference to backend (offline?):', backendErr);
+      }
+    }
+
+    // Clear all scheduled notifications if denied/disabled
+    if (!granted) {
+      await clearAllScheduledNotifications();
+    }
+    
     return granted;
   } catch (error) {
     captureException(error instanceof Error ? error : new Error(String(error)));
@@ -55,11 +73,27 @@ export async function requestNotificationPermissions(): Promise<boolean> {
 
 /**
  * Check if notifications are enabled
+ * Checks both system permissions and user preferences from backend
  */
-export async function areNotificationsEnabled(): Promise<boolean> {
+export async function areNotificationsEnabled(userId?: string): Promise<boolean> {
   try {
+    // Check system permissions
     const { status } = await Notifications.getPermissionsAsync();
-    return status === 'granted';
+    if (status !== 'granted') return false;
+
+    // Check user preference from backend if userId provided
+    if (userId) {
+      try {
+        const prefs = await getUserPreferences(userId);
+        if (prefs?.notificationsEnabled === false) {
+          return false;
+        }
+      } catch (backendErr) {
+        console.warn('Failed to fetch notification preference from backend, using system permissions:', backendErr);
+      }
+    }
+
+    return true;
   } catch {
     return false;
   }
@@ -104,23 +138,26 @@ export type AccountImportRecord = {
 
 /**
  * Save the last import date for an account
+ * Syncs to backend and caches locally for offline support
  */
 export async function saveLastImportDate(
   accountKey: string,
   accountName: string,
-  provider: string
+  provider: string,
+  userId?: string
 ): Promise<void> {
   try {
-    const stored = await AsyncStorage.getItem(LAST_IMPORT_DATES_KEY);
-    const records: AccountImportRecord[] = stored ? JSON.parse(stored) : [];
-    
-    const existingIndex = records.findIndex(r => r.accountKey === accountKey);
     const newRecord: AccountImportRecord = {
       accountKey,
       accountName,
       provider,
       lastImportDate: new Date().toISOString(),
     };
+
+    // Always save to local cache first (for offline support)
+    const stored = await AsyncStorage.getItem(LAST_IMPORT_DATES_KEY);
+    const records: AccountImportRecord[] = stored ? JSON.parse(stored) : [];
+    const existingIndex = records.findIndex(r => r.accountKey === accountKey);
 
     if (existingIndex >= 0) {
       records[existingIndex] = newRecord;
@@ -129,6 +166,16 @@ export async function saveLastImportDate(
     }
 
     await AsyncStorage.setItem(LAST_IMPORT_DATES_KEY, JSON.stringify(records));
+
+    // Sync to backend if userId is provided
+    if (userId) {
+      try {
+        await saveAccountImport(userId, accountKey, accountName, provider);
+      } catch (backendErr) {
+        console.warn('Failed to sync import to backend (offline?):', backendErr);
+        // Continue - local cache is saved
+      }
+    }
   } catch (error) {
     console.error('Failed to save last import date:', error);
     captureException(error instanceof Error ? error : new Error(String(error)));
@@ -137,9 +184,26 @@ export async function saveLastImportDate(
 
 /**
  * Get all account import records
+ * Fetches from backend first, falls back to local cache
  */
-export async function getLastImportDates(): Promise<AccountImportRecord[]> {
+export async function getLastImportDates(userId?: string): Promise<AccountImportRecord[]> {
   try {
+    // Try to fetch from backend first if userId is provided
+    if (userId) {
+      try {
+        const backendRecords = await getAccountImports(userId);
+        if (backendRecords.length > 0) {
+          // Cache the backend data locally
+          await AsyncStorage.setItem(LAST_IMPORT_DATES_KEY, JSON.stringify(backendRecords));
+          return backendRecords;
+        }
+      } catch (backendErr) {
+        console.warn('Failed to fetch imports from backend, using local cache:', backendErr);
+        // Fall through to local cache
+      }
+    }
+
+    // Fallback to local cache
     const stored = await AsyncStorage.getItem(LAST_IMPORT_DATES_KEY);
     return stored ? JSON.parse(stored) : [];
   } catch (error) {
@@ -151,8 +215,8 @@ export async function getLastImportDates(): Promise<AccountImportRecord[]> {
 /**
  * Check which accounts have stale imports (older than specified days)
  */
-export async function getStaleAccounts(daysThreshold: number = 14): Promise<AccountImportRecord[]> {
-  const records = await getLastImportDates();
+export async function getStaleAccounts(daysThreshold: number = 14, userId?: string): Promise<AccountImportRecord[]> {
+  const records = await getLastImportDates(userId);
   const now = new Date();
   const thresholdMs = daysThreshold * 24 * 60 * 60 * 1000;
 
@@ -176,16 +240,27 @@ export function daysSinceImport(lastImportDate: string): number {
 /**
  * Mark an import banner as dismissed for a specific stale state
  * Stores the dismissal with the last import date so we don't show again until it refreshes
+ * Syncs to backend and caches locally
  */
-export async function dismissImportBanner(accountKey: string, lastImportDate: string): Promise<void> {
+export async function dismissImportBanner(accountKey: string, lastImportDate: string, userId?: string): Promise<void> {
   try {
+    // Update local cache
     const stored = await AsyncStorage.getItem(DISMISSED_IMPORT_BANNERS_KEY);
     const dismissed: Record<string, string> = stored ? JSON.parse(stored) : {};
-    
-    // Store the last import date at time of dismissal
     dismissed[accountKey] = lastImportDate;
-    
     await AsyncStorage.setItem(DISMISSED_IMPORT_BANNERS_KEY, JSON.stringify(dismissed));
+
+    // Sync to backend if userId is provided
+    if (userId) {
+      try {
+        await saveUserPreferences(userId, {
+          dismissedImportBanners: dismissed,
+        });
+      } catch (backendErr) {
+        console.warn('Failed to sync dismissal to backend (offline?):', backendErr);
+        // Continue - local cache is saved
+      }
+    }
   } catch (error) {
     console.error('Failed to dismiss import banner:', error);
     captureException(error instanceof Error ? error : new Error(String(error)));
@@ -195,16 +270,39 @@ export async function dismissImportBanner(accountKey: string, lastImportDate: st
 /**
  * Check if a stale import banner should be shown
  * Returns false if the user dismissed this specific stale state
+ * Fetches from backend first, falls back to local cache
  */
 export async function shouldShowImportBanner(
   accountKey: string,
-  currentLastImportDate: string
+  currentLastImportDate: string,
+  userId?: string
 ): Promise<boolean> {
   try {
-    const stored = await AsyncStorage.getItem(DISMISSED_IMPORT_BANNERS_KEY);
-    if (!stored) return true;
-    
-    const dismissed: Record<string, string> = JSON.parse(stored);
+    let dismissed: Record<string, string> = {};
+
+    // Try to fetch from backend first if userId is provided
+    if (userId) {
+      try {
+        const prefs = await getUserPreferences(userId);
+        if (prefs?.dismissedImportBanners) {
+          dismissed = prefs.dismissedImportBanners;
+          // Cache the backend data locally
+          await AsyncStorage.setItem(DISMISSED_IMPORT_BANNERS_KEY, JSON.stringify(dismissed));
+        }
+      } catch (backendErr) {
+        console.warn('Failed to fetch preferences from backend, using local cache:', backendErr);
+        // Fall through to local cache
+      }
+    }
+
+    // Fallback to local cache if no backend data
+    if (Object.keys(dismissed).length === 0) {
+      const stored = await AsyncStorage.getItem(DISMISSED_IMPORT_BANNERS_KEY);
+      if (stored) {
+        dismissed = JSON.parse(stored);
+      }
+    }
+
     const dismissedForDate = dismissed[accountKey];
     
     // If never dismissed, or dismissed for a different (older) import date, show the banner
@@ -751,4 +849,101 @@ export async function setBadgeCount(count: number): Promise<void> {
  */
 export async function clearBadgeCount(): Promise<void> {
   await setBadgeCount(0);
+}
+
+/**
+ * Clear all scheduled notifications
+ * Used when user disables notifications
+ */
+export async function clearAllScheduledNotifications(): Promise<void> {
+  try {
+    console.log('Clearing all scheduled notifications...');
+    await Notifications.cancelAllScheduledNotificationsAsync();
+    
+    // Clear tracking data
+    await AsyncStorage.removeItem(SCHEDULED_NOTIFICATIONS_KEY);
+    console.log('All scheduled notifications cleared');
+  } catch (error) {
+    console.error('Failed to clear scheduled notifications:', error);
+    captureException(error instanceof Error ? error : new Error(String(error)));
+  }
+}
+
+/**
+ * Initialize notification preferences on app load
+ * Clears scheduled notifications if user has disabled them
+ */
+export async function initializeNotificationPreferences(userId: string): Promise<void> {
+  try {
+    const prefs = await getUserPreferences(userId);
+    
+    // If user explicitly disabled notifications, clear scheduled ones
+    if (prefs?.notificationsEnabled === false) {
+      console.log('User has notifications disabled, clearing scheduled notifications');
+      await clearAllScheduledNotifications();
+    }
+  } catch (error) {
+    console.warn('Failed to initialize notification preferences:', error);
+  }
+}
+
+/**
+ * Disable notifications for user
+ * Clears all scheduled notifications and saves preference
+ */
+export async function disableNotifications(userId: string): Promise<void> {
+  try {
+    // Clear all scheduled notifications
+    await clearAllScheduledNotifications();
+    
+    // Save preference locally
+    await AsyncStorage.setItem(NOTIFICATION_PERMISSION_KEY, 'disabled');
+    
+    // Sync to backend
+    await saveUserPreferences(userId, {
+      notificationsEnabled: false,
+    });
+    
+    console.log('Notifications disabled for user');
+  } catch (error) {
+    console.error('Failed to disable notifications:', error);
+    captureException(error instanceof Error ? error : new Error(String(error)));
+    throw error;
+  }
+}
+
+/**
+ * Clear all scheduled notifications
+ * Used when user disables notifications
+ */
+export async function clearAllScheduledNotifications(): Promise<void> {
+  try {
+    console.log('Clearing all scheduled notifications...');
+    await Notifications.cancelAllScheduledNotificationsAsync();
+    
+    // Clear tracking data
+    await AsyncStorage.removeItem(SCHEDULED_NOTIFICATIONS_KEY);
+    console.log('All scheduled notifications cleared');
+  } catch (error) {
+    console.error('Failed to clear scheduled notifications:', error);
+    captureException(error instanceof Error ? error : new Error(String(error)));
+  }
+}
+
+/**
+ * Initialize notification preferences on app load
+ * Clears scheduled notifications if user has disabled them
+ */
+export async function initializeNotificationPreferences(userId: string): Promise<void> {
+  try {
+    const prefs = await getUserPreferences(userId);
+    
+    // If user explicitly disabled notifications, clear scheduled ones
+    if (prefs?.notificationsEnabled === false) {
+      console.log('User has notifications disabled, clearing scheduled notifications');
+      await clearAllScheduledNotifications();
+    }
+  } catch (error) {
+    console.warn('Failed to initialize notification preferences:', error);
+  }
 }

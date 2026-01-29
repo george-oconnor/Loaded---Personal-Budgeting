@@ -33,12 +33,12 @@ export function ImportReminderBanner() {
     const checkStaleAccounts = async () => {
       if (!user?.id) return;
       
-      const stale = await getStaleAccounts(14); // 2 weeks threshold
+      const stale = await getStaleAccounts(14, user.id); // 2 weeks threshold
       
       // Filter out accounts that have been dismissed for their current stale state
       const accountsToShow: AccountImportRecord[] = [];
       for (const account of stale) {
-        const shouldShow = await shouldShowImportBanner(account.accountKey, account.lastImportDate);
+        const shouldShow = await shouldShowImportBanner(account.accountKey, account.lastImportDate, user.id);
         if (shouldShow) {
           accountsToShow.push(account);
         }
@@ -61,9 +61,11 @@ export function ImportReminderBanner() {
   }, [user?.id, dismissed]);
 
   const handleDismiss = async () => {
+    if (!user?.id) return;
+    
     // Mark all currently shown stale accounts as dismissed for their current state
     for (const account of staleAccounts) {
-      await dismissImportBanner(account.accountKey, account.lastImportDate);
+      await dismissImportBanner(account.accountKey, account.lastImportDate, user.id);
     }
     
     Animated.timing(fadeAnim, {
