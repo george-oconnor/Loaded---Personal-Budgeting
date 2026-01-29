@@ -98,7 +98,7 @@ export default function AccountBalanceCard({ refreshTrigger }: AccountBalanceCar
           <View className="mb-3">
             <View className="flex-row items-center justify-between mb-2">
               <Text className="text-white/70 text-xs font-semibold uppercase tracking-wide">Current</Text>
-              <Text className="text-white/90 text-sm font-bold">
+              <Text className={`text-sm font-bold ${currentTotal < 0 ? 'text-red-300' : 'text-white/90'}`}>
                 {formatCurrency(currentTotal / 100, mainCurrency)}
               </Text>
             </View>
@@ -112,7 +112,7 @@ export default function AccountBalanceCard({ refreshTrigger }: AccountBalanceCar
                     {account.accountName}
                   </Text>
                 </View>
-                <Text className="text-white font-semibold text-sm ml-2">
+                <Text className={`font-semibold text-sm ml-2 ${account.balance < 0 ? 'text-red-300' : 'text-white'}`}>
                   {formatCurrency(account.balance / 100, account.currency)}
                 </Text>
               </View>
@@ -125,7 +125,7 @@ export default function AccountBalanceCard({ refreshTrigger }: AccountBalanceCar
           <View>
             <View className="flex-row items-center justify-between mb-2">
               <Text className="text-white/70 text-xs font-semibold uppercase tracking-wide">Savings</Text>
-              <Text className="text-white/90 text-sm font-bold">
+              <Text className={`text-sm font-bold ${savingsTotal < 0 ? 'text-red-300' : 'text-white/90'}`}>
                 {formatCurrency(savingsTotal / 100, mainCurrency)}
               </Text>
             </View>
@@ -139,7 +139,7 @@ export default function AccountBalanceCard({ refreshTrigger }: AccountBalanceCar
                     {account.accountName}
                   </Text>
                 </View>
-                <Text className="text-white font-semibold text-sm ml-2">
+                <Text className={`font-semibold text-sm ml-2 ${account.balance < 0 ? 'text-red-300' : 'text-white'}`}>
                   {formatCurrency(account.balance / 100, account.currency)}
                 </Text>
               </View>
