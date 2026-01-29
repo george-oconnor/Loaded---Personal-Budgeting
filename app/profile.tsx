@@ -3,8 +3,8 @@ import { deleteTransactionsByBatchId, getLastImportBatchId } from "@/lib/appwrit
 import { queueDeleteAll } from "@/lib/deleteQueue";
 import {
     areNotificationsEnabled,
-    cancelAllNotifications,
     daysSinceImport,
+    disableNotifications,
     getLastImportDates,
     requestNotificationPermissions,
     scheduleDailyBudgetCheck,
@@ -46,12 +46,14 @@ export default function ProfileScreen() {
   // Check notification permissions and load import history
   useEffect(() => {
     const checkNotifications = async () => {
-      const enabled = await areNotificationsEnabled();
+      if (!user?.id) return;
+      const enabled = await areNotificationsEnabled(user.id);
       setNotificationsEnabled(enabled);
     };
     
     const loadImportHistory = async () => {
-      const records = await getLastImportDates();
+      if (!user?.id) return;
+      const records = await getLastImportDates(user.id);
       setImportRecords(records.map(r => ({
         accountName: r.accountName,
         provider: r.provider,
@@ -61,11 +63,13 @@ export default function ProfileScreen() {
     
     checkNotifications();
     loadImportHistory();
-  }, []);
+  }, [user?.id]);
 
   const handleToggleNotifications = async (value: boolean) => {
+    if (!user?.id) return;
+    
     if (value) {
-      const granted = await requestNotificationPermissions();
+      const granted = await requestNotificationPermissions(user.id);
       if (granted) {
         setNotificationsEnabled(true);
         // Schedule default notifications
@@ -80,7 +84,7 @@ export default function ProfileScreen() {
         );
       }
     } else {
-      await cancelAllNotifications();
+      await disableNotifications(user.id);
       setNotificationsEnabled(false);
       Alert.alert("Notifications Disabled", "You won't receive any notifications from this app.");
     }
