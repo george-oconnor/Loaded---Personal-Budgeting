@@ -4,7 +4,7 @@ import { processGenericCSV } from "@/lib/genericCsvParser";
 import { Feather } from "@expo/vector-icons";
 import * as Clipboard from "expo-clipboard";
 import * as DocumentPicker from "expo-document-picker";
-import * as FileSystem from "expo-file-system";
+import * as FileSystem from "expo-file-system/legacy";
 import { router, useLocalSearchParams } from "expo-router";
 import React, { useEffect, useState } from "react";
 import {
@@ -240,23 +240,39 @@ export default function GenericCSVPasteScreen() {
         return;
       }
 
-      // Add account info to transactions
-      const transactionsWithAccount = transactions.map(tx => ({
-        ...tx,
-        account: 'Imported Account',
-      }));
+      // Extract the balance from the most recent transaction (if available)
+      // Sort by date descending to find the most recent
+      const sortedByDate = [...parseResult.transactions].sort((a, b) => 
+        new Date(b.date).getTime() - new Date(a.date).getTime()
+      );
+      const mostRecentBalance = sortedByDate[0]?.balance;
+      
+      // Parse the balance to a number (it's stored as string)
+      let latestBalance = "";
+      if (mostRecentBalance) {
+        const parsed = parseFloat(mostRecentBalance.replace(/[^0-9.-]/g, ''));
+        if (!isNaN(parsed)) {
+          latestBalance = parsed.toFixed(2);
+        }
+      }
 
-      // Store in cache for preview screen
+      // Store in cache for account selection screen (without account info yet)
       parsedTransactionsCache = {
-        transactions: transactionsWithAccount,
+        transactions: transactions,
         parsedRows: parseResult.transactions.length,
         totalRows: parseResult.totalRows,
         skippedRows: parseResult.skipped,
         skippedDetails: parseResult.skippedDetails,
       };
 
-      // Navigate to preview
-      router.push("/import/csv/preview" as any);
+      // Navigate to account selection (which will then go to preview)
+      router.push({
+        pathname: "/import/csv/select-account",
+        params: {
+          transactionCount: String(transactions.length),
+          detectedBalance: latestBalance,
+        },
+      } as any);
     } catch (error) {
       console.error("Parse error:", error);
       Alert.alert(
