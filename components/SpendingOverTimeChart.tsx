@@ -80,6 +80,7 @@ export default function SpendingOverTimeChart({
     const prevCycleStart = getCycleStartDateWithOffset(cycleType, cycleDay, cycleOffset - 1);
     const prevCycleEnd = new Date(cycleStart);
     prevCycleEnd.setDate(prevCycleEnd.getDate() - 1);
+    prevCycleEnd.setHours(23, 59, 59, 999); // End of day to include all transactions on the last day
 
     // Filter expenses in current cycle and sort by date
     const cycleExpenses = transactions
@@ -134,8 +135,19 @@ export default function SpendingOverTimeChart({
     // Calculate the total length of current cycle for normalization
     const currentCycleDays = Math.floor((cycleEnd.getTime() - cycleStart.getTime()) / (1000 * 60 * 60 * 24)) + 1;
 
-    // Track which previous cycle days we've already accumulated to avoid double-counting
-    const prevDaysAccumulated = new Set<string>();
+    // Pre-calculate cumulative spending for ALL days in the previous cycle
+    // This ensures we capture all spending regardless of how it maps to the current cycle
+    const prevCycleCumulativeByDay: number[] = [];
+    let prevRunningTotal = 0;
+    for (let i = 0; i < cycleDayCount; i++) {
+      const prevDate = new Date(prevCycleStart);
+      prevDate.setDate(prevDate.getDate() + i);
+      const prevDateKey = getDateKey(prevDate);
+      if (prevDailySpending[prevDateKey]) {
+        prevRunningTotal += prevDailySpending[prevDateKey];
+      }
+      prevCycleCumulativeByDay.push(prevRunningTotal);
+    }
 
     while (currentDate <= cycleEnd) {
       const dateKey = getDateKey(currentDate);
@@ -154,26 +166,13 @@ export default function SpendingOverTimeChart({
       }
       
       // Get equivalent date from previous cycle based on percentage through cycle
+      // Map the current day's position to the equivalent position in the previous cycle
       const dayOffsetFromCycleStart = Math.floor((currentDate.getTime() - cycleStart.getTime()) / (1000 * 60 * 60 * 24));
-      const percentThroughCycle = dayOffsetFromCycleStart / currentCycleDays;
-      const prevCycleDayOffset = Math.floor(percentThroughCycle * cycleDayCount);
+      const percentThroughCycle = (dayOffsetFromCycleStart + 1) / currentCycleDays; // +1 to include current day
+      const prevCycleDayIndex = Math.min(Math.floor(percentThroughCycle * cycleDayCount), cycleDayCount - 1);
       
-      if (prevCycleDayOffset < cycleDayCount) {
-        const prevCycleDate = new Date(prevCycleStart);
-        prevCycleDate.setDate(prevCycleDate.getDate() + prevCycleDayOffset);
-        const prevDateKey = getDateKey(prevCycleDate);
-        
-        // Only add this day's spending if we haven't already accumulated it
-        if (!prevDaysAccumulated.has(prevDateKey)) {
-          if (prevDailySpending[prevDateKey]) {
-            prevCumulative += prevDailySpending[prevDateKey];
-          }
-          prevDaysAccumulated.add(prevDateKey);
-        }
-        prevCumulativeAmounts.push(prevCumulative);
-      } else {
-        prevCumulativeAmounts.push(prevCumulative);
-      }
+      // Use the pre-calculated cumulative amount for the equivalent previous cycle day
+      prevCumulativeAmounts.push(prevCycleCumulativeByDay[prevCycleDayIndex] || 0);
       
       currentDate.setDate(currentDate.getDate() + 1);
     }
