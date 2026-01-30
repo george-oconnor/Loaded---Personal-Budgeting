@@ -5,7 +5,7 @@ import {
     getTransactionsInRangeAll,
     updateMonthlyBudget,
 } from "@/lib/appwrite";
-import { getCycleStartDate, getTransactionsInCurrentCycle } from "@/lib/budgetCycle";
+import { getCycleStartDateWithOffset, getTransactionsInCurrentCycle } from "@/lib/budgetCycle";
 import { captureException } from "@/lib/sentry";
 import { getQueuedTransactions } from "@/lib/syncQueue";
 import type { Category, Summary, Transaction } from "@/types/type";
@@ -119,9 +119,10 @@ export const useHomeStore = create<HomeState>((set) => ({
 
       // Calculate date range to fetch: from start of previous cycle to now
       // This ensures we have data for both current and previous cycle (needed for analytics comparison)
-      const currentCycleStart = getCycleStartDate(cycleType, cycleDay);
-      const prevCycleStart = new Date(currentCycleStart);
-      prevCycleStart.setMonth(prevCycleStart.getMonth() - 1);
+      // Use getCycleStartDateWithOffset to correctly get the previous cycle start date
+      // (simply subtracting a month doesn't work for cycle types like last_friday where
+      // cycle lengths vary and start dates don't align with calendar months)
+      const prevCycleStart = getCycleStartDateWithOffset(cycleType, cycleDay, -1);
       
       const rangeStart = prevCycleStart.toISOString();
       const rangeEnd = new Date(now.getTime() + 24 * 60 * 60 * 1000).toISOString();
