@@ -65,6 +65,7 @@ export default function SpendAnalytics() {
   const [selectedOption, setSelectedOption] = useState<string | null>(null);
   const [selectedGraphDate, setSelectedGraphDate] = useState<string | null>(null);
   const [cycleOffset, setCycleOffset] = useState(0); // 0 = current cycle, -1 = previous, etc.
+  const [hintSwipeStart, setHintSwipeStart] = useState<number | null>(null);
   const dropdownAnim = useRef(new Animated.Value(0)).current;
   const budget = summary?.monthlyBudget ?? 0;
   const currency = summary?.currency ?? "USD";
@@ -440,8 +441,26 @@ export default function SpendAnalytics() {
             onSwipe={handleChartSwipe}
           />
           
-          {/* Swipe hint indicator */}
-          <View className="flex-row justify-center items-center mt-2 gap-1">
+          {/* Swipe hint indicator - also swipeable */}
+          <View
+            className="flex-row justify-center items-center mt-2 gap-1 py-2"
+            onTouchStart={(e) => setHintSwipeStart(e.nativeEvent.pageX)}
+            onTouchEnd={(e) => {
+              if (hintSwipeStart !== null) {
+                const deltaX = e.nativeEvent.pageX - hintSwipeStart;
+                const swipeThreshold = 50;
+                if (Math.abs(deltaX) > swipeThreshold) {
+                  Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
+                  if (deltaX > 0) {
+                    handleChartSwipe("right");
+                  } else {
+                    handleChartSwipe("left");
+                  }
+                }
+                setHintSwipeStart(null);
+              }
+            }}
+          >
             <Feather name="chevron-left" size={14} color="#D1D5DB" />
             <Text className="text-xs text-gray-300">Swipe to change period</Text>
             <Feather name="chevron-right" size={14} color="#D1D5DB" />
