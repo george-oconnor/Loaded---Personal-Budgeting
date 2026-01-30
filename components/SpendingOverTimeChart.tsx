@@ -51,9 +51,14 @@ export default function SpendingOverTimeChart({
     // Calculate which point is closest to the touch
     const relativeX = touchX - padding.left;
     const normalizedX = Math.max(0, Math.min(1, relativeX / chartWidth));
-    const pointIndex = Math.round(normalizedX * (chartData.points.length - 1));
+    // Only allow selection of real points (not artificial extension points)
+    const selectableCount = chartData.realPointCount;
+    const pointIndex = Math.min(
+      Math.round(normalizedX * (chartData.points.length - 1)),
+      selectableCount - 1 // Clamp to last real point
+    );
     
-    if (pointIndex >= 0 && pointIndex < chartData.points.length) {
+    if (pointIndex >= 0 && pointIndex < selectableCount) {
       const newDate = chartData.points[pointIndex].date;
       if (newDate !== lastVibrationDate) {
         Haptics.selectionAsync();
@@ -180,11 +185,27 @@ export default function SpendingOverTimeChart({
     const maxAmount = Math.max(...cumulativeAmounts, ...prevCumulativeAmounts, monthlyBudget, 0);
 
     // Generate points for the line chart - only up to today
-    const points = days.slice(0, axisEndIndex + 1).map((day, index) => {
+    let points = days.slice(0, axisEndIndex + 1).map((day, index) => {
       const x = (index / Math.max(days.length - 1, 1)) * chartWidth;
       const y = chartInnerHeight - (cumulativeAmounts[index] / (maxAmount || 1)) * chartInnerHeight;
       return { x, y, amount: cumulativeAmounts[index], date: day };
     });
+
+    // Track how many points are "real" (selectable) vs artificial
+    const realPointCount = points.length;
+
+    // If we only have one data point (first day of cycle), add a second point
+    // to create a visible line segment extending slightly to the right
+    if (points.length === 1 && days.length > 1) {
+      const firstPoint = points[0];
+      const secondX = (1 / Math.max(days.length - 1, 1)) * chartWidth;
+      points.push({
+        x: secondX,
+        y: firstPoint.y, // Same y value (flat line at current spending)
+        amount: firstPoint.amount,
+        date: days[1], // Tomorrow's date
+      });
+    }
 
     // Generate previous cycle points - show entire normalized previous cycle
     const prevPoints = days.map((day, index) => {
@@ -193,7 +214,7 @@ export default function SpendingOverTimeChart({
       return { x, y, amount: prevCumulativeAmounts[index], date: day };
     });
 
-    return { points, prevPoints, maxAmount, days, cumulativeAmounts, prevCumulativeAmounts, axisEndIndex };
+    return { points, prevPoints, maxAmount, days, cumulativeAmounts, prevCumulativeAmounts, axisEndIndex, realPointCount };
   }, [transactions, cycleType, cycleDay, cycleOffset]);
 
   // Only show "no data" message if both current and previous cycle have no data
