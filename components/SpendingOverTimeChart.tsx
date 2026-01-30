@@ -1,8 +1,8 @@
 import { getCycleEndDateForCycleStart, getCycleStartDate, getCycleStartDateWithOffset, getNextCycleStartDate, getPreviousCycleStartDate } from "@/lib/budgetCycle";
 import type { Transaction } from "@/types/type";
 import * as Haptics from "expo-haptics";
-import { useMemo, useRef, useState } from "react";
-import { Dimensions, GestureResponderEvent, Text, View } from "react-native";
+import { useEffect, useMemo, useRef, useState } from "react";
+import { Animated, Dimensions, GestureResponderEvent, Text, View } from "react-native";
 import Svg, { Circle, Defs, Line, LinearGradient, Path, Rect, Stop, Text as SvgText } from "react-native-svg";
 
 interface SpendingOverTimeChartProps {
@@ -39,6 +39,38 @@ export default function SpendingOverTimeChart({
   const [touchStart, setTouchStart] = useState<{ x: number; y: number; time: number } | null>(null);
   const [gestureMode, setGestureMode] = useState<"undecided" | "selecting" | "swiping">("undecided");
   const svgRef = useRef(null);
+
+  // Animation for slide transitions
+  const slideAnim = useRef(new Animated.Value(0)).current;
+  const [prevCycleOffset, setPrevCycleOffset] = useState(cycleOffset);
+
+  // Animate when cycleOffset changes
+  useEffect(() => {
+    if (cycleOffset !== prevCycleOffset) {
+      // When going to older cycles (offset decreasing, e.g. 0 → -1), current slides out right, new slides in from left
+      // When going to newer cycles (offset increasing, e.g. -1 → 0), current slides out left, new slides in from right
+      const direction = cycleOffset < prevCycleOffset ? 1 : -1;
+
+      // First, animate current content sliding out
+      Animated.timing(slideAnim, {
+        toValue: direction * screenWidth,
+        duration: 150,
+        useNativeDriver: true,
+      }).start(() => {
+        // After sliding out, instantly move to opposite side (off-screen)
+        slideAnim.setValue(-direction * screenWidth);
+        setPrevCycleOffset(cycleOffset);
+
+        // Then animate new content sliding in
+        Animated.spring(slideAnim, {
+          toValue: 0,
+          useNativeDriver: true,
+          tension: 80,
+          friction: 12,
+        }).start();
+      });
+    }
+  }, [cycleOffset, prevCycleOffset, screenWidth, slideAnim]);
 
   // Helper to extract date string consistently
   const getDateKey = (date: Date) => {
@@ -405,25 +437,30 @@ export default function SpendingOverTimeChart({
   ];
 
   return (
-    <View className="bg-white py-6">
-      <View
-        onStartShouldSetResponder={() => true}
-        onStartShouldSetResponderCapture={() => true}
-        onMoveShouldSetResponder={() => true}
-        onMoveShouldSetResponderCapture={() => true}
-        onResponderTerminationRequest={() => false}
-        onResponderGrant={handleChartPress}
-        onResponderMove={handleChartMove}
-        onResponderRelease={handleChartRelease}
-        className="items-center px-5"
+    <View className="bg-white py-6 overflow-hidden">
+      <Animated.View
+        style={{
+          transform: [{ translateX: slideAnim }],
+        }}
       >
-        <Svg ref={svgRef} height={chartHeight} width={screenWidth} pointerEvents="none">
-          <Defs>
-            <LinearGradient id="areaGradient" x1="0%" y1="0%" x2="0%" y2="100%">
-              <Stop offset="0%" stopColor={gradientStartColor} stopOpacity="0.3" />
-              <Stop offset="100%" stopColor={gradientStartColor} stopOpacity="0" />
-            </LinearGradient>
-          </Defs>
+        <View
+          onStartShouldSetResponder={() => true}
+          onStartShouldSetResponderCapture={() => true}
+          onMoveShouldSetResponder={() => true}
+          onMoveShouldSetResponderCapture={() => true}
+          onResponderTerminationRequest={() => false}
+          onResponderGrant={handleChartPress}
+          onResponderMove={handleChartMove}
+          onResponderRelease={handleChartRelease}
+          className="items-center px-5"
+        >
+          <Svg ref={svgRef} height={chartHeight} width={screenWidth} pointerEvents="none">
+            <Defs>
+              <LinearGradient id="areaGradient" x1="0%" y1="0%" x2="0%" y2="100%">
+                <Stop offset="0%" stopColor={gradientStartColor} stopOpacity="0.3" />
+                <Stop offset="100%" stopColor={gradientStartColor} stopOpacity="0" />
+              </LinearGradient>
+            </Defs>
 
           {/* Grid lines */}
           {/* Grid lines removed */}
@@ -773,8 +810,9 @@ export default function SpendingOverTimeChart({
               </>
             );
           })()}
-        </Svg>
+          </Svg>
         </View>
+      </Animated.View>
     </View>
   );
 }
