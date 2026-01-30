@@ -471,12 +471,47 @@ export default function GenericCSVPasteScreen() {
 
             {/* Missing Fields */}
             {analysisResult.missingFields.length > 0 && (
-              <View>
+              <View className="mb-3">
                 <Text className="text-xs text-red-700">
                   Missing: {analysisResult.missingFields.join(', ')}
                 </Text>
               </View>
             )}
+
+            {/* Change Import Method Option */}
+            <Pressable
+              onPress={() => {
+                Alert.alert(
+                  'Change Import Method',
+                  'Try importing this CSV with a different method:',
+                  [
+                    {
+                      text: 'AIB Import',
+                      onPress: () => {
+                        router.push({
+                          pathname: '/import/aib/paste',
+                          params: { csvContent }
+                        } as any);
+                      }
+                    },
+                    {
+                      text: 'Revolut Import',
+                      onPress: () => {
+                        router.push({
+                          pathname: '/import/revolut/paste',
+                          params: { csvContent }
+                        } as any);
+                      }
+                    },
+                    { text: 'Cancel', style: 'cancel' }
+                  ]
+                );
+              }}
+              className="mt-2 flex-row items-center justify-center gap-2 py-2 px-3 bg-white rounded-lg border border-gray-300"
+            >
+              <Feather name="refresh-cw" size={14} color="#6B7280" />
+              <Text className="text-sm text-gray-700 font-medium">Try Different Import Method</Text>
+            </Pressable>
           </View>
         )}
       </ScrollView>

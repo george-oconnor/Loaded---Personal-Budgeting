@@ -234,50 +234,61 @@ export default function RootLayout() {
           // Detect the CSV provider (AIB or Revolut)
           const provider = detectCSVProvider(fileContent);
 
-          if (provider === 'unknown') {
-            Alert.alert(
-              'Unrecognized Format',
-              'This CSV format is not recognized as AIB or Revolut. Would you like to use AI to analyze it, or select a provider manually?',
-              [
-                {
-                  text: 'Use AI Analysis',
-                  onPress: () => {
-                    router.push({
-                      pathname: '/import/csv/paste',
-                      params: { csvContent: fileContent }
-                    } as any);
-                  }
-                },
-                {
-                  text: 'AIB',
-                  onPress: () => {
-                    router.push({
-                      pathname: '/import/aib/paste',
-                      params: { csvContent: fileContent }
-                    } as any);
-                  }
-                },
-                {
-                  text: 'Revolut',
-                  onPress: () => {
-                    router.push({
-                      pathname: '/import/revolut/paste',
-                      params: { csvContent: fileContent }
-                    } as any);
-                  }
-                },
-                { text: 'Cancel', style: 'cancel' }
-              ]
-            );
-            return;
-          }
-
-          // Route to the appropriate import screen
-          const pathname = provider === 'aib' ? '/import/aib/paste' : '/import/revolut/paste';
-          router.push({
-            pathname,
-            params: { csvContent: fileContent }
-          } as any);
+          // Always show options to let user choose or confirm the import method
+          const detectedText = 
+            provider === 'aib' ? 'AIB format detected' :
+            provider === 'revolut' ? 'Revolut format detected' :
+            provider === 'generic' ? 'Generic CSV detected' :
+            'Format not recognized';
+          
+          Alert.alert(
+            detectedText,
+            'Choose how to import this CSV file:',
+            [
+              ...(provider !== 'unknown' ? [{
+                text: `Use ${provider === 'aib' ? 'AIB' : provider === 'revolut' ? 'Revolut' : 'Generic'} Import (Recommended)`,
+                style: 'default' as const,
+                onPress: () => {
+                  const pathname = 
+                    provider === 'aib' ? '/import/aib/paste' :
+                    provider === 'revolut' ? '/import/revolut/paste' :
+                    '/import/csv/paste';
+                  router.push({
+                    pathname,
+                    params: { csvContent: fileContent }
+                  } as any);
+                }
+              }] : []),
+              {
+                text: 'AI CSV Import',
+                onPress: () => {
+                  router.push({
+                    pathname: '/import/csv/paste',
+                    params: { csvContent: fileContent }
+                  } as any);
+                }
+              },
+              {
+                text: 'AIB Import',
+                onPress: () => {
+                  router.push({
+                    pathname: '/import/aib/paste',
+                    params: { csvContent: fileContent }
+                  } as any);
+                }
+              },
+              {
+                text: 'Revolut Import',
+                onPress: () => {
+                  router.push({
+                    pathname: '/import/revolut/paste',
+                    params: { csvContent: fileContent }
+                  } as any);
+                }
+              },
+              { text: 'Cancel', style: 'cancel' }
+            ]
+          );
 
           Alert.alert(
             'CSV Detected',

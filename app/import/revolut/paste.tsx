@@ -342,10 +342,44 @@ export default function RevolutImportPasteScreen() {
               <Feather name="check-circle" size={16} color="#10B981" />
               <Text className="text-sm font-semibold text-green-900">CSV Data Ready</Text>
             </View>
-            <Text className="text-xs text-green-700">
+            <Text className="text-xs text-green-700 mb-3">
               {csvContent.split("\n").length} lines • Ready to import approximately{" "}
               {Math.max(0, csvContent.split("\n").length - 1)} transactions
             </Text>
+            {/* Change Import Method Option */}
+            <Pressable
+              onPress={() => {
+                Alert.alert(
+                  'Change Import Method',
+                  'This CSV was detected as Revolut format. Try importing with a different method:',
+                  [
+                    {
+                      text: 'AI CSV Import',
+                      onPress: () => {
+                        router.push({
+                          pathname: '/import/csv/paste',
+                          params: { csvContent }
+                        } as any);
+                      }
+                    },
+                    {
+                      text: 'AIB Import',
+                      onPress: () => {
+                        router.push({
+                          pathname: '/import/aib/paste',
+                          params: { csvContent }
+                        } as any);
+                      }
+                    },
+                    { text: 'Cancel', style: 'cancel' }
+                  ]
+                );
+              }}
+              className="flex-row items-center justify-center gap-2 py-2 px-3 bg-white rounded-lg border border-gray-300 mt-2"
+            >
+              <Feather name="refresh-cw" size={12} color="#6B7280" />
+              <Text className="text-xs text-gray-700 font-medium">Try Different Import Method</Text>
+            </Pressable>
           </View>
         )}
 
