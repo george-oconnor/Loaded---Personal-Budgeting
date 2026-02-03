@@ -141,7 +141,6 @@ export default function TransactionDetailScreen() {
         };
         
         isQueued = false;
-        console.log("Loaded database transaction:", dbTx);
       } catch (dbError) {
         // Transaction not in database, check the queue
         // Only consider transactions that are not yet completed (pending, syncing, or failed)

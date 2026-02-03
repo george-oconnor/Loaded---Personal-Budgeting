@@ -59,12 +59,12 @@ export default function TransactionRow({
     }
     
     return () => { isMounted = false; };
-  }, [transaction.displayName, transaction.title, transaction.id]);
+  }, [transaction.displayName, transaction.title]);
 
   // Built-in icon (fallback)
   const builtInIconUrl = (shouldHideMerchantIcon || iconFailed)
     ? null
-    : (isRevolutTransfer ? `https://www.google.com/s2/favicons?domain=revolut.com&sz=64` : getMerchantIconUrl(transaction.title, 64, tldIndex));
+    : (isRevolutTransfer ? `https://www.google.com/s2/favicons?domain=revolut.com&sz=64` : getMerchantIconUrl(transaction.displayName || transaction.title, 64, tldIndex));
   // Prioritize crowd-sourced icon (if not failed), then fall back to built-in
   const effectiveCrowdSourcedUrl = (crowdSourcedIconUrl && !crowdSourcedIconFailed) ? crowdSourcedIconUrl : null;
   const merchantIconUrl = effectiveCrowdSourcedUrl || ((shouldHideMerchantIcon || iconFailed) ? null : builtInIconUrl);

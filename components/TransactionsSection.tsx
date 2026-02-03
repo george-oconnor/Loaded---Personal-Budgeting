@@ -15,9 +15,9 @@ export default function TransactionsSection({
   categories: Category[];
   loading: boolean;
 }) {
-  // Filter out auto-flagged transfers (same as "all" filter in transactions screen)
+  // Filter out auto-flagged transfers and manually hidden transactions (same as "all" filter in transactions screen)
   const nonTransferTransactions = transactions.filter(
-    (t) => !t.matchedTransferId && !t.isAnalyticsProtected
+    (t) => !t.matchedTransferId && !t.isAnalyticsProtected && !t.excludeFromAnalytics
   );
   const topTransactions = nonTransferTransactions.slice(0, 5);
   const { setSelectedTransactionId } = useTransactionDetailStore();
@@ -40,7 +40,7 @@ export default function TransactionsSection({
       ) : (
         <FlatList
           data={topTransactions}
-          keyExtractor={(item) => item.id}
+          keyExtractor={(item, index) => `${item.id}-${index}`}
           scrollEnabled={false}
           ItemSeparatorComponent={() => <View className="h-3" />}
           renderItem={({ item }) => {

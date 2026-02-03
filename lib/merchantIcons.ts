@@ -32,6 +32,7 @@ async function getCrowdSourcedIcons(): Promise<IconMapping> {
   try {
     if (!databaseId || !iconVotesTableId) {
       // Fallback to AsyncStorage if database not configured
+      console.log('[Icon Debug] Database not configured, falling back to AsyncStorage');
       const data = await AsyncStorage.getItem(ICON_SUGGESTIONS_KEY);
       return data ? JSON.parse(data) : {};
     }
@@ -39,10 +40,26 @@ async function getCrowdSourcedIcons(): Promise<IconMapping> {
     // Basic retry on transient Appwrite failures
     const maxAttempts = 2;
     let attempt = 0;
-    let res: any;
+    let allDocuments: any[] = [];
+    
     while (attempt < maxAttempts) {
       try {
-        res = await databases.listDocuments(databaseId, iconVotesTableId, []);
+        // Fetch all documents with pagination
+        let offset = 0;
+        const limit = 100;
+        let hasMore = true;
+        
+        while (hasMore) {
+          const res = await databases.listDocuments(databaseId, iconVotesTableId, [
+            Query.limit(limit),
+            Query.offset(offset),
+          ]);
+          
+          allDocuments = allDocuments.concat(res.documents);
+          hasMore = res.documents.length === limit;
+          offset += limit;
+        }
+        
         break;
       } catch (err: any) {
         attempt++;
@@ -60,7 +77,7 @@ async function getCrowdSourcedIcons(): Promise<IconMapping> {
     // Group votes by merchant and find the most popular icon URL
     const votesByMerchant = new Map<string, Map<string, number>>();
 
-    res.documents.forEach((doc: any) => {
+    allDocuments.forEach((doc: any) => {
       const merchantKey = doc.merchant_key;
       const iconUrl = doc.icon_url;
 
@@ -254,7 +271,6 @@ const merchantDomains: Record<string, string> = {
   'sprout & co': 'sproutfoodco.com',
   'póg tara street': 'ifancyapog.ie',
   'jc\'s takeaway': 'https://scontent-lga3-1.xx.fbcdn.net/v/t39.30808-1/300770167_497347769061736_5881899660955844192_n.png?stp=dst-png_s480x480&_nc_cat=111&ccb=1-7&_nc_sid=2d3e12&_nc_ohc=cMBRymZaZJUQ7kNvwGLX6x0&_nc_oc=AdnPY_FVMpJlJTqJHbtZEvpRXP8wJa7lZMBPZgBcZN9ohueIMZVtCm_xq_cVuL2HFGIYYa_VZLNPxVQcQHNUZGkr&_nc_zt=24&_nc_ht=scontent-lga3-1.xx&_nc_gid=kYvx8UkC_vko9_7RZhmqgw&oh=00_AfrmtNP5Rft4ts8v5d3UnX0NZA7Y87JFdQW53_ZpeXv3Xg&oe=6961ECA4',
-  'brew twenty one': 'https://scontent-zrh1-1.cdninstagram.com/v/t51.2885-19/449200254_1025451885976282_6567563999337065492_n.jpg?stp=dst-jpg_s320x320_tt6&efg=eyJ2ZW5jb2RlX3RhZyI6InByb2ZpbGVfcGljLmRqYW5nby44OTAuYzIifQ&_nc_ht=scontent-zrh1-1.cdninstagram.com&_nc_cat=110&_nc_oc=Q6cZ2QFklyiu1OtJ4vC72Ph6i0-eO8eTed4vWVBzY4xL_7sSivMRlRmkcbssxjWI-ia0CFQ&_nc_ohc=Edes-GrrwpgQ7kNvwFtVJRV&_nc_gid=6PmAaW2H6j4NV0zIMIWXxA&edm=AOQ1c0wBAAAA&ccb=7-5&oh=00_AfpWi5tk_PczYhxHNum3W64U6cPaFSD7-8vIP5s8Jew5HQ&oe=6976ACC7&_nc_sid=8b3546',
   
   // Transport
   'uber': 'uber.com',

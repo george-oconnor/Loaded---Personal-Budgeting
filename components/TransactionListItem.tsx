@@ -54,7 +54,7 @@ export default function TransactionListItem({
     }
     
     return () => { isMounted = false; };
-  }, [transaction.displayName, transaction.title, transaction.id]);
+  }, [transaction.displayName, transaction.title]);
 
   // Built-in icon (fallback)
   const builtInIconUrl = (shouldHideMerchantIcon || iconFailed) ? null : getMerchantIconUrl(transaction.displayName || transaction.title, 64, tldIndex);
