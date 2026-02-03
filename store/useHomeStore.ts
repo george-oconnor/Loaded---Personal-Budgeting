@@ -21,7 +21,9 @@ type HomeState = {
   error: string | null;
   cycleType: "first_working_day" | "last_working_day" | "specific_date" | "last_friday";
   cycleDay?: number;
+  oldestCycleLoaded: number; // Track the oldest cycle offset we've loaded (e.g., -6)
   fetchHome: () => Promise<void>;
+  fetchOlderTransactions: (cyclesBack: number) => Promise<void>; // Load more historical data
   setCategory: (id: string) => void;
 };
 
@@ -80,7 +82,7 @@ const mockSummary: Summary = {
   monthlyBudget: 300000,
 };
 
-export const useHomeStore = create<HomeState>((set) => ({
+export const useHomeStore = create<HomeState>((set, get) => ({
   summary: null,
   categories: mockCategories,
   selectedCategory: "all",
@@ -89,6 +91,7 @@ export const useHomeStore = create<HomeState>((set) => ({
   error: null,
   cycleType: "first_working_day",
   cycleDay: undefined,
+  oldestCycleLoaded: -6, // Initially load 6 cycles back
   fetchHome: async () => {
     set({ loading: true, error: null });
     try {
@@ -117,14 +120,14 @@ export const useHomeStore = create<HomeState>((set) => ({
       const cycleType = (budgetDoc.cycleType as any) || "first_working_day";
       const cycleDay = budgetDoc.cycleDay;
 
-      // Calculate date range to fetch: from start of previous cycle to now
-      // This ensures we have data for both current and previous cycle (needed for analytics comparison)
-      // Use getCycleStartDateWithOffset to correctly get the previous cycle start date
-      // (simply subtracting a month doesn't work for cycle types like last_friday where
+      // Calculate date range to fetch: from start of 6 cycles ago to now
+      // This ensures we have data for analytics to view historical cycles
+      // Use getCycleStartDateWithOffset to correctly get the cycle start date
+      // (simply subtracting months doesn't work for cycle types like last_friday where
       // cycle lengths vary and start dates don't align with calendar months)
-      const prevCycleStart = getCycleStartDateWithOffset(cycleType, cycleDay, -1);
+      const historicalCycleStart = getCycleStartDateWithOffset(cycleType, cycleDay, -6);
       
-      const rangeStart = prevCycleStart.toISOString();
+      const rangeStart = historicalCycleStart.toISOString();
       const rangeEnd = new Date(now.getTime() + 24 * 60 * 60 * 1000).toISOString();
 
       const [monthTxDocs, rangeTxDocs, catDocs, queuedTxs] = await Promise.all([
@@ -284,6 +287,7 @@ export const useHomeStore = create<HomeState>((set) => ({
         categories: allCategories,
         cycleType: (budgetDoc.cycleType as any) || "first_working_day",
         cycleDay: budgetDoc.cycleDay,
+        oldestCycleLoaded: -6, // Reset to initial load range
         loading: false,
       });
     } catch (err) {
@@ -291,6 +295,75 @@ export const useHomeStore = create<HomeState>((set) => ({
       console.warn("❌ Fetch home data failed:", errorMsg, err);
       captureException(err instanceof Error ? err : new Error(errorMsg), { userId: "demo-user" });
       set({ error: errorMsg, loading: false });
+    }
+  },
+  fetchOlderTransactions: async (cyclesBack: number) => {
+    const { cycleType, cycleDay, oldestCycleLoaded, transactions } = get();
+    const user = useSessionStore.getState().user;
+    const userId = user?.id;
+    
+    if (!userId) return;
+    
+    const envOk = Boolean(process.env.EXPO_PUBLIC_APPWRITE_ENDPOINT && process.env.EXPO_PUBLIC_APPWRITE_PROJECT_ID);
+    if (!envOk) return; // Can't fetch in mock mode
+    
+    try {
+      // Fetch additional cycles beyond what we currently have
+      // e.g., if oldestCycleLoaded is -6 and we need -10, fetch from -10 to -7
+      const newOldest = Math.min(oldestCycleLoaded - cyclesBack, oldestCycleLoaded);
+      const fetchStart = getCycleStartDateWithOffset(cycleType, cycleDay, newOldest);
+      const fetchEnd = getCycleStartDateWithOffset(cycleType, cycleDay, oldestCycleLoaded);
+      
+      console.log(`Fetching older transactions from cycle ${newOldest} to ${oldestCycleLoaded}`);
+      
+      const olderTxDocs = await getTransactionsInRangeAll(
+        userId,
+        fetchStart.toISOString(),
+        fetchEnd.toISOString()
+      );
+      
+      const olderTransactions: Transaction[] = olderTxDocs.map((t) => ({
+        id: (t as any).$id ?? `${t.userId}-${t.date}`,
+        title: t.title,
+        subtitle: t.subtitle || "",
+        amount: t.amount,
+        categoryId: t.categoryId,
+        kind: t.kind,
+        date: t.date,
+        currency: (t as any).currency,
+        excludeFromAnalytics: (t as any).excludeFromAnalytics,
+        source: (t as any).source,
+        displayName: (t as any).displayName,
+        account: (t as any).account,
+        matchedTransferId: (t as any).matchedTransferId,
+        hideMerchantIcon: (t as any).hideMerchantIcon,
+      }));
+      
+      // Dedupe and merge with existing transactions
+      const dedupeById = (list: Transaction[]) => {
+        const byId = new Map<string, Transaction>();
+        for (const tx of list) {
+          if (!tx.id) continue;
+          byId.set(tx.id, tx);
+        }
+        return Array.from(byId.values());
+      };
+      
+      const mergedTransactions = dedupeById([...transactions, ...olderTransactions]).sort(
+        (a, b) => new Date(b.date).getTime() - new Date(a.date).getTime()
+      );
+      
+      set({
+        transactions: mergedTransactions,
+        oldestCycleLoaded: newOldest,
+      });
+      
+      console.log(`Loaded ${olderTransactions.length} older transactions, now have ${mergedTransactions.length} total`);
+    } catch (err) {
+      console.warn("Failed to fetch older transactions:", err);
+      captureException(err instanceof Error ? err : new Error('fetchOlderTransactions failed'), {
+        tags: { feature: 'home_store', operation: 'fetchOlderTransactions' }
+      });
     }
   },
   setCategory: (id) => set({ selectedCategory: id || "all" }),

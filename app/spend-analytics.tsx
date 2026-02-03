@@ -1,6 +1,6 @@
 import RemainingSpendCard from "@/components/RemainingSpendCard";
 import SpendingOverTimeChart from "@/components/SpendingOverTimeChart";
-import { getCycleBudgetStats, getCycleEndDateForCycleStart, getCycleStartDateWithOffset, getDaysRemainingInCycle } from "@/lib/budgetCycle";
+import { getCycleBudgetStats, getCycleEndDateForCycleStart, getCycleRepresentativeMonth, getCycleStartDateWithOffset, getDaysRemainingInCycle } from "@/lib/budgetCycle";
 import { formatCurrency } from "@/lib/currencyFunctions";
 import { getMerchantIconUrl, getSuggestedMerchantIcon } from "@/lib/merchantIcons";
 import { useHomeStore } from "@/store/useHomeStore";
@@ -58,7 +58,7 @@ function normalizeFeatherIconName(icon: string | undefined, categoryName: string
 
 
 export default function SpendAnalytics() {
-  const { summary, transactions, categories, loading, cycleType, cycleDay } = useHomeStore();
+  const { summary, transactions, categories, loading, cycleType, cycleDay, oldestCycleLoaded, fetchOlderTransactions } = useHomeStore();
   const [isDraggingChart, setIsDraggingChart] = useState(false);
   const [viewMode, setViewMode] = useState<"category" | "merchant" | "daily">("category");
   const [showViewDropdown, setShowViewDropdown] = useState(false);
@@ -70,13 +70,24 @@ export default function SpendAnalytics() {
   const budget = summary?.monthlyBudget ?? 0;
   const currency = summary?.currency ?? "USD";
 
+  // Load more historical data when approaching the edge
+  useEffect(() => {
+    // When we're within 2 cycles of the oldest loaded data, fetch 6 more cycles
+    const threshold = oldestCycleLoaded + 2;
+    if (cycleOffset <= threshold) {
+      console.log(`Approaching data edge (offset: ${cycleOffset}, oldest: ${oldestCycleLoaded}), loading more...`);
+      fetchOlderTransactions(6);
+    }
+  }, [cycleOffset, oldestCycleLoaded, fetchOlderTransactions]);
+
   // Get the cycle label based on offset
   const getCycleLabel = useMemo(() => {
     if (cycleOffset === 0) return "This Month";
     if (cycleOffset === -1) return "Last Month";
     
     const cycleStart = getCycleStartDateWithOffset(cycleType, cycleDay, cycleOffset);
-    return cycleStart.toLocaleDateString('en-US', { month: 'long', year: 'numeric' });
+    const representativeMonth = getCycleRepresentativeMonth(cycleType, cycleDay, cycleStart);
+    return representativeMonth.toLocaleDateString('en-US', { month: 'long', year: 'numeric' });
   }, [cycleOffset, cycleType, cycleDay]);
 
   // Handle chart swipe to change cycle

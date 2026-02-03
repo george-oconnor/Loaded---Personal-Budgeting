@@ -535,3 +535,29 @@ export function getCycleEndDateForCycleStart(
   cycleEnd.setHours(23, 59, 59, 999);
   return cycleEnd;
 }
+
+/**
+ * Get the representative month for a cycle - finds the month that contains
+ * the 1st day of a calendar month within the cycle
+ */
+export function getCycleRepresentativeMonth(
+  cycleType: "first_working_day" | "last_working_day" | "specific_date" | "last_friday" = "first_working_day",
+  cycleDay?: number,
+  cycleStart: Date = getCycleStartDate(cycleType, cycleDay)
+): Date {
+  const cycleEnd = getCycleEndDateForCycleStart(cycleType, cycleDay, cycleStart);
+  
+  // Check each day in the cycle to find the first occurrence of the 1st of a month
+  const currentDay = new Date(cycleStart);
+  while (currentDay <= cycleEnd) {
+    if (currentDay.getDate() === 1) {
+      // Found the 1st day of a month within this cycle
+      return new Date(currentDay);
+    }
+    currentDay.setDate(currentDay.getDate() + 1);
+  }
+  
+  // If no 1st of month found in cycle (shouldn't happen for normal cycles),
+  // fall back to the cycle start month
+  return new Date(cycleStart);
+}
