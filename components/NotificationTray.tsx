@@ -1,7 +1,10 @@
+import { getDeleteStatus } from '@/lib/deleteQueue';
+import { getPendingTransactionCount, getSyncStatus, SyncStatus } from '@/lib/syncQueue';
 import { useNotificationStore, type InAppNotification } from '@/store/useNotificationStore';
+import { useSessionStore } from '@/store/useSessionStore';
 import { Feather } from '@expo/vector-icons';
 import { router } from 'expo-router';
-import { useCallback, useEffect, useRef } from 'react';
+import { useCallback, useEffect, useRef, useState } from 'react';
 import {
     Animated,
     Dimensions,
@@ -130,6 +133,7 @@ function EmptyState() {
 
 // Main notification tray component
 export function NotificationTray() {
+  const { user } = useSessionStore();
   const {
     notifications,
     showTray,
@@ -144,9 +148,39 @@ export function NotificationTray() {
 
   const slideAnim = useRef(new Animated.Value(SCREEN_HEIGHT)).current;
   const backdropAnim = useRef(new Animated.Value(0)).current;
+  
+  const [syncStatus, setSyncStatus] = useState<SyncStatus | null>(null);
+  const [pendingCount, setPendingCount] = useState(0);
+  const [deleteStatus, setDeleteStatus] = useState<any>(null);
+
+  // Poll for sync/delete status
+  useEffect(() => {
+    const checkSync = async () => {
+      const status = await getSyncStatus();
+      const pending = await getPendingTransactionCount();
+      const delStatus = await getDeleteStatus();
+      setSyncStatus(status);
+      setPendingCount(pending);
+      // Only show delete status if it belongs to the current user
+      if (delStatus && delStatus.userId === user?.id) {
+        setDeleteStatus(delStatus);
+      } else {
+        setDeleteStatus(null);
+      }
+    };
+
+    if (showTray) {
+      checkSync();
+      const interval = setInterval(checkSync, 1000);
+      return () => clearInterval(interval);
+    }
+  }, [showTray, user?.id]);
 
   // Filter out dismissed notifications for display
   const visibleNotifications = notifications.filter((n) => !n.dismissed);
+  
+  const hasSyncActivity = syncStatus?.isSyncing || pendingCount > 0;
+  const hasDeleteActivity = deleteStatus && deleteStatus.status !== 'completed';
 
   useEffect(() => {
     if (showTray) {
@@ -280,8 +314,114 @@ export function NotificationTray() {
             </View>
           </View>
 
+          {/* Sync/Delete Status Section */}
+          {(hasSyncActivity || hasDeleteActivity) && (
+            <View className="border-b border-gray-200">
+              {/* Delete Status */}
+              {deleteStatus && deleteStatus.status !== 'completed' && (
+                <View className="px-4 py-4 border-b border-gray-100">
+                  <View className="flex-row items-center gap-3">
+                    {deleteStatus.status === 'in-progress' ? (
+                      <View className="h-10 w-10 items-center justify-center rounded-full bg-red-50">
+                        <Feather name="trash-2" size={18} color="#EF4444" />
+                      </View>
+                    ) : (
+                      <View className="h-10 w-10 items-center justify-center rounded-full bg-gray-50">
+                        <Feather name="clock" size={18} color="#6B7280" />
+                      </View>
+                    )}
+                    
+                    <View className="flex-1">
+                      <Text className="text-sm font-medium text-dark-100">
+                        {deleteStatus.status === 'in-progress' 
+                          ? "Deleting transactions..." 
+                          : deleteStatus.status === 'failed'
+                          ? "Delete failed"
+                          : "Delete queued"}
+                      </Text>
+                      <Text className="text-xs text-gray-500 mt-0.5">
+                        {deleteStatus.status === 'in-progress' 
+                          ? `${deleteStatus.totalDeleted} of ${deleteStatus.totalToDelete || '?'}` 
+                          : deleteStatus.status === 'failed'
+                          ? deleteStatus.lastError || 'An error occurred'
+                          : "Will process shortly"}
+                      </Text>
+                    </View>
+                  </View>
+                  
+                  {deleteStatus.status === 'in-progress' && (
+                    <View className="mt-3 h-1.5 bg-gray-100 rounded-full overflow-hidden">
+                      <View
+                        className="h-full bg-red-500 rounded-full"
+                        style={{ 
+                          width: `${deleteStatus.totalToDelete > 0 
+                            ? (deleteStatus.totalDeleted / deleteStatus.totalToDelete) * 100 
+                            : 0}%`
+                        }}
+                      />
+                    </View>
+                  )}
+                </View>
+              )}
+
+              {/* Sync Upload Status */}
+              {hasSyncActivity && (
+                <View className="px-4 py-4">
+                  <View className="flex-row items-center gap-3">
+                    {syncStatus?.isSyncing ? (
+                      <View className="h-10 w-10 items-center justify-center rounded-full bg-blue-50">
+                        <Feather name="upload-cloud" size={18} color="#3B82F6" />
+                      </View>
+                    ) : pendingCount > 0 ? (
+                      <View className="h-10 w-10 items-center justify-center rounded-full bg-gray-50">
+                        <Feather name="clock" size={18} color="#6B7280" />
+                      </View>
+                    ) : null}
+                    
+                    <View className="flex-1">
+                      <Text className="text-sm font-medium text-dark-100">
+                        {syncStatus?.isSyncing 
+                          ? "Syncing transactions..." 
+                          : `${pendingCount} transaction${pendingCount === 1 ? '' : 's'} queued`}
+                      </Text>
+                      {syncStatus?.isSyncing ? (
+                        <View className="flex-row items-center justify-between mt-0.5">
+                          <Text className="text-xs text-gray-500">
+                            {syncStatus.progress.current}/{syncStatus.progress.total}
+                          </Text>
+                          <Text className="text-xs font-semibold text-blue-600">
+                            {syncStatus.progress.total > 0 
+                              ? Math.round((syncStatus.progress.current / syncStatus.progress.total) * 100)
+                              : 0}%
+                          </Text>
+                        </View>
+                      ) : (
+                        <Text className="text-xs text-gray-500 mt-0.5">
+                          Will sync shortly
+                        </Text>
+                      )}
+                    </View>
+                  </View>
+                  
+                  {syncStatus?.isSyncing && (
+                    <View className="mt-3 h-1.5 bg-gray-100 rounded-full overflow-hidden">
+                      <View
+                        className="h-full bg-blue-500 rounded-full"
+                        style={{ 
+                          width: `${syncStatus.progress.total > 0 
+                            ? (syncStatus.progress.current / syncStatus.progress.total) * 100 
+                            : 0}%` 
+                        }}
+                      />
+                    </View>
+                  )}
+                </View>
+              )}
+            </View>
+          )}
+
           {/* Notifications list */}
-          {visibleNotifications.length === 0 ? (
+          {visibleNotifications.length === 0 && !hasSyncActivity && !hasDeleteActivity ? (
             <EmptyState />
           ) : (
             <FlatList

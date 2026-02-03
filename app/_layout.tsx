@@ -234,20 +234,29 @@ export default function RootLayout() {
           // Detect the CSV provider (AIB or Revolut)
           const provider = detectCSVProvider(fileContent);
 
-          // Always show options to let user choose or confirm the import method
-          const detectedText = 
-            provider === 'aib' ? 'AIB format detected' :
-            provider === 'revolut' ? 'Revolut format detected' :
-            provider === 'generic' ? 'Generic CSV detected' :
-            'Format not recognized';
+          // Build the title based on detected type
+          const providerName = 
+            provider === 'aib' ? 'AIB' :
+            provider === 'revolut' ? 'Revolut' :
+            provider === 'generic' ? 'Generic CSV' :
+            'Unknown';
           
+          const title = provider !== 'unknown' 
+            ? `${providerName} Type File Detected` 
+            : 'CSV File Detected';
+          
+          const message = provider !== 'unknown'
+            ? `Click OK to proceed with ${providerName} import`
+            : 'Click OK to proceed or choose a different import type';
+          
+          // Show single popup with OK and Change Type options
           Alert.alert(
-            detectedText,
-            'Choose how to import this CSV file:',
+            title,
+            message,
             [
-              ...(provider !== 'unknown' ? [{
-                text: `Use ${provider === 'aib' ? 'AIB' : provider === 'revolut' ? 'Revolut' : 'Generic'} Import (Recommended)`,
-                style: 'default' as const,
+              {
+                text: 'OK',
+                style: 'default',
                 onPress: () => {
                   const pathname = 
                     provider === 'aib' ? '/import/aib/paste' :
@@ -258,41 +267,21 @@ export default function RootLayout() {
                     params: { csvContent: fileContent }
                   } as any);
                 }
-              }] : []),
-              {
-                text: 'AI CSV Import',
-                onPress: () => {
-                  router.push({
-                    pathname: '/import/csv/paste',
-                    params: { csvContent: fileContent }
-                  } as any);
-                }
               },
               {
-                text: 'AIB Import',
+                text: 'Change Import Type',
                 onPress: () => {
                   router.push({
-                    pathname: '/import/aib/paste',
-                    params: { csvContent: fileContent }
-                  } as any);
-                }
-              },
-              {
-                text: 'Revolut Import',
-                onPress: () => {
-                  router.push({
-                    pathname: '/import/revolut/paste',
-                    params: { csvContent: fileContent }
+                    pathname: '/import/select-import-type',
+                    params: { 
+                      csvContent: fileContent,
+                      detectedType: provider
+                    }
                   } as any);
                 }
               },
               { text: 'Cancel', style: 'cancel' }
             ]
-          );
-
-          Alert.alert(
-            'CSV Detected',
-            `Detected ${provider.toUpperCase()} format. Loading import screen...`
           );
 
         } catch (error) {
