@@ -144,7 +144,7 @@ Create a `.env.local` file in the root directory (see `.env.example`):
 # Appwrite configuration
 EXPO_PUBLIC_APPWRITE_ENDPOINT=https://your-appwrite-instance.com/v1
 EXPO_PUBLIC_APPWRITE_PROJECT_ID=your-project-id
-EXPO_PUBLIC_APPWRITE_API_KEY=your-api-key
+APPWRITE_API_KEY=your-server-api-key
 
 # Sentry error tracking (optional)
 SENTRY_AUTH_TOKEN=your-sentry-token

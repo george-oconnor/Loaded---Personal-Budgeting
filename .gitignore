@@ -8,6 +8,9 @@ package-lock.json
 # dependencies
 node_modules/
 
+# Python (created by tooling/scripts)
+.venv/
+
 # Expo
 .expo/
 dist/
