@@ -4,6 +4,7 @@
 .env.local
 _References
 package-lock.json
+.vscode/
 
 # dependencies
 node_modules/
