@@ -40,6 +40,14 @@ export async function requestNotificationPermissions(userId?: string): Promise<b
     const { status: existingStatus } = await Notifications.getPermissionsAsync();
     let finalStatus = existingStatus;
 
+    if (existingStatus === 'denied') {
+      // User has explicitly denied — on iOS calling requestPermissionsAsync()
+      // will throw. The user must re-enable via Settings, so bail out early.
+      await AsyncStorage.setItem(NOTIFICATION_PERMISSION_KEY, 'denied');
+      await clearAllScheduledNotifications();
+      return false;
+    }
+
     if (existingStatus !== 'granted') {
       const { status } = await Notifications.requestPermissionsAsync();
       finalStatus = status;
@@ -246,7 +254,11 @@ export async function dismissImportBanner(accountKey: string, lastImportDate: st
   try {
     // Update local cache
     const stored = await AsyncStorage.getItem(DISMISSED_IMPORT_BANNERS_KEY);
-    const dismissed: Record<string, string> = stored ? JSON.parse(stored) : {};
+    let dismissed: Record<string, string> = stored ? JSON.parse(stored) : {};
+    // Guard against double-serialised values (stored as '"{}"' → parses to string '{}')
+    if (typeof dismissed === 'string') {
+      dismissed = JSON.parse(dismissed);
+    }
     dismissed[accountKey] = lastImportDate;
     await AsyncStorage.setItem(DISMISSED_IMPORT_BANNERS_KEY, JSON.stringify(dismissed));
 
@@ -300,6 +312,10 @@ export async function shouldShowImportBanner(
       const stored = await AsyncStorage.getItem(DISMISSED_IMPORT_BANNERS_KEY);
       if (stored) {
         dismissed = JSON.parse(stored);
+        // Guard against double-serialised values
+        if (typeof dismissed === 'string') {
+          dismissed = JSON.parse(dismissed);
+        }
       }
     }
 

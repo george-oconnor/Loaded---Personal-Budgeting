@@ -1260,9 +1260,17 @@ export async function getUserPreferences(userId: string): Promise<UserPreference
 
   try {
     const doc = await databases.getDocument(databaseId, userPreferencesTableId, userId);
+    // Appwrite may return dismissedImportBanners as a JSON string — parse it if so
+    let dismissedImportBanners: Record<string, string> = {};
+    if (doc.dismissedImportBanners) {
+      dismissedImportBanners =
+        typeof doc.dismissedImportBanners === 'string'
+          ? JSON.parse(doc.dismissedImportBanners)
+          : doc.dismissedImportBanners;
+    }
     return {
       userId: doc.userId,
-      dismissedImportBanners: doc.dismissedImportBanners || {},
+      dismissedImportBanners,
       $updatedAt: doc.$updatedAt,
     };
   } catch (err) {
@@ -1285,13 +1293,20 @@ export async function saveUserPreferences(
   }
 
   try {
+    // Appwrite stores dismissedImportBanners as a string attribute,
+    // so we must JSON.stringify the object before sending it
+    const payload: Record<string, unknown> = { ...preferences };
+    if (payload.dismissedImportBanners && typeof payload.dismissedImportBanners === 'object') {
+      payload.dismissedImportBanners = JSON.stringify(payload.dismissedImportBanners);
+    }
+
     // Try to update existing
     try {
       await databases.updateDocument(
         databaseId,
         userPreferencesTableId,
         userId,
-        preferences
+        payload
       );
     } catch (updateErr) {
       // Document doesn't exist, create it
@@ -1302,7 +1317,7 @@ export async function saveUserPreferences(
           userId,
           {
             userId,
-            ...preferences,
+            ...payload,
           },
           [
             Permission.read(Role.user(userId)),
