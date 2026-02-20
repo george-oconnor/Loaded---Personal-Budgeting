@@ -254,7 +254,6 @@ export default function RootLayout() {
             title,
             message,
             [
-              { text: 'Cancel', style: 'cancel' },
               {
                 text: 'Change Import Type',
                 onPress: () => {
@@ -269,7 +268,7 @@ export default function RootLayout() {
               },
               {
                 text: 'OK',
-                style: 'default',
+                style: 'cancel',
                 isPreferred: true,
                 onPress: () => {
                   const pathname = 
@@ -383,7 +382,9 @@ export default function RootLayout() {
   return (
     <ErrorBoundary fallback={ErrorFallback}>
       <GestureHandlerRootView style={{ flex: 1 }}>
-        <Stack screenOptions={{ headerShown: false }} />
+        <Stack screenOptions={{ headerShown: false }}>
+          <Stack.Screen name="index" options={{ gestureEnabled: false }} />
+        </Stack>
         <NotificationTray />
       </GestureHandlerRootView>
     </ErrorBoundary>

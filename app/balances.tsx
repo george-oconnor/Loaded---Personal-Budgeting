@@ -1,5 +1,5 @@
 import { getAccountBalances, removeAccountBalance, type AccountBalance } from "@/lib/accountBalances";
-import { formatCurrency } from "@/lib/currencyFunctions";
+import { convertCurrency, formatCurrency, getExchangeRates, getPrimaryCurrency } from "@/lib/currencyFunctions";
 import { useSessionStore } from "@/store/useSessionStore";
 import { Feather } from "@expo/vector-icons";
 import { router } from "expo-router";
@@ -13,6 +13,8 @@ export default function BalancesScreen() {
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
   const [deletingKey, setDeletingKey] = useState<string | null>(null);
+  const [exchangeRates, setExchangeRates] = useState<Record<string, number>>({});
+  const [ratesStale, setRatesStale] = useState(false);
   const { user } = useSessionStore();
 
   const sortBalances = (data: AccountBalance[]) =>
@@ -24,6 +26,16 @@ export default function BalancesScreen() {
       // Sort by account name for consistent display
       const sorted = sortBalances(data);
       setBalances(sorted);
+
+      // Fetch exchange rates based on the primary currency
+      const currencies = sorted.map(b => b.currency);
+      const hasMultipleCurrencies = new Set(currencies).size > 1;
+      if (hasMultipleCurrencies) {
+        const primary = getPrimaryCurrency(currencies);
+        const { rates, stale } = await getExchangeRates(primary);
+        setExchangeRates(rates);
+        setRatesStale(stale);
+      }
     } catch (error) {
       console.error('Error loading balances:', error);
     } finally {
@@ -126,14 +138,23 @@ export default function BalancesScreen() {
   const savingsAccounts = balances.filter(acc => categorizeAccount(acc) === 'savings');
   const loanAccounts = balances.filter(acc => categorizeAccount(acc) === 'loan');
 
-  // Calculate subtotals
-  const currentTotal = currentAccounts.reduce((sum, account) => sum + account.balance, 0);
-  const savingsTotal = savingsAccounts.reduce((sum, account) => sum + account.balance, 0);
+  // Determine the display currency (most common across accounts)
+  const displayCurrency = getPrimaryCurrency(balances.map(b => b.currency));
+  const hasMultipleCurrencies = new Set(balances.map(b => b.currency)).size > 1;
 
-  // Calculate total across all accounts
+  // Convert a balance to the display currency
+  const toDisplayCurrency = (balance: number, fromCurrency: string) => {
+    if (fromCurrency === displayCurrency || !hasMultipleCurrencies) return balance;
+    return convertCurrency(balance, fromCurrency, displayCurrency, exchangeRates);
+  };
+
+  // Calculate subtotals (converted to display currency)
+  const currentTotal = currentAccounts.reduce((sum, account) => sum + toDisplayCurrency(account.balance, account.currency), 0);
+  const savingsTotal = savingsAccounts.reduce((sum, account) => sum + toDisplayCurrency(account.balance, account.currency), 0);
+
+  // Calculate total across all accounts (converted to display currency)
   const totalBalance = balances.reduce((sum, account) => {
-    // Convert to GBP if needed (simplified - you might want proper currency conversion)
-    return sum + account.balance;
+    return sum + toDisplayCurrency(account.balance, account.currency);
   }, 0);
 
   return (
@@ -192,11 +213,17 @@ export default function BalancesScreen() {
             <View className="rounded-3xl bg-primary px-6 py-6 shadow-md">
               <Text className="text-white/80 text-sm mb-1">Total Balance</Text>
               <Text className="text-white text-4xl font-bold">
-                {formatCurrency(totalBalance / 100, balances[0]?.currency || 'GBP')}
+                {formatCurrency(totalBalance / 100, displayCurrency)}
               </Text>
               <Text className="text-white/60 text-xs mt-2">
                 Across {balances.length} account{balances.length !== 1 ? 's' : ''}
+                {hasMultipleCurrencies ? ` · Converted to ${displayCurrency}` : ''}
               </Text>
+              {hasMultipleCurrencies && ratesStale && (
+                <Text className="text-white/40 text-xs mt-1">
+                  ⚠ Using approximate exchange rates
+                </Text>
+              )}
             </View>
           </View>
 

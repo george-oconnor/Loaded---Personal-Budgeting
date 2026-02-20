@@ -358,8 +358,9 @@ export async function startSyncingTransactions(
           // Don't pause - let background task continue
           // Just notify user that sync continues in background
           try {
-            const { addNotification } = useNotificationStore.getState();
-            await addNotification(createSyncPausedNotification(remainingCount));
+            // Disabled: in-app sync notifications
+            // const { addNotification } = useNotificationStore.getState();
+            // await addNotification(createSyncPausedNotification(remainingCount));
             
             // Send push notification
             if (await areNotificationsEnabled()) {
@@ -525,11 +526,12 @@ export async function startSyncingTransactions(
     
     // Add completion notification
     try {
-      const { addNotification } = useNotificationStore.getState();
+      // Disabled: in-app sync notifications
+      // const { addNotification } = useNotificationStore.getState();
       const isBackground = AppState.currentState !== 'active';
       
       if (totalSucceeded > 0) {
-        await addNotification(createSyncCompleteNotification(totalSucceeded));
+        // await addNotification(createSyncCompleteNotification(totalSucceeded));
         
         // Send push notification if app is in background
         if (isBackground && await areNotificationsEnabled()) {
@@ -546,7 +548,7 @@ export async function startSyncingTransactions(
         }
       }
       if (totalFailed > 0) {
-        await addNotification(createSyncFailedNotification(totalFailed));
+        // await addNotification(createSyncFailedNotification(totalFailed));
         
         // Always send push notification for failures
         if (await areNotificationsEnabled()) {
