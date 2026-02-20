@@ -8,8 +8,8 @@ import RemainingSpendCard from "@/components/RemainingSpendCard";
 import TransactionsSection from "@/components/TransactionsSection";
 import type { QuickAction } from "@/types/type";
 import { router } from "expo-router";
-import { useEffect, useState } from "react";
-import { Pressable, RefreshControl, ScrollView, Text, View } from "react-native";
+import { useEffect, useRef, useState } from "react";
+import { AppState, Pressable, RefreshControl, ScrollView, Text, View } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
 import { useHomeStore } from "../store/useHomeStore";
 import { useSessionStore } from "../store/useSessionStore";
@@ -35,12 +35,30 @@ export default function Index() {
   const { user } = useSessionStore();
   const [refreshing, setRefreshing] = useState(false);
   const [refreshTrigger, setRefreshTrigger] = useState(0);
+  const appState = useRef(AppState.currentState);
 
   useEffect(() => {
     // Only fetch when user is available
     if (user?.id) {
       fetchHome();
     }
+  }, [user?.id, fetchHome]);
+
+  // Refresh when app comes back to the foreground
+  useEffect(() => {
+    const subscription = AppState.addEventListener("change", (nextAppState) => {
+      if (
+        appState.current.match(/inactive|background/) &&
+        nextAppState === "active" &&
+        user?.id
+      ) {
+        fetchHome();
+        setRefreshTrigger((prev) => prev + 1);
+      }
+      appState.current = nextAppState;
+    });
+
+    return () => subscription.remove();
   }, [user?.id, fetchHome]);
 
   const handleRefresh = async () => {
