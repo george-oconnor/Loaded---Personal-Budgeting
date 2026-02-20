@@ -75,10 +75,25 @@ async function getLearnedMappings(): Promise<MerchantMapping> {
     // Basic retry on transient Appwrite failures (e.g., 503)
     const maxAttempts = 2;
     let attempt = 0;
-    let res: any;
+    let allDocuments: any[] = [];
     while (attempt < maxAttempts) {
       try {
-        res = await databases.listDocuments(databaseId, merchantVotesTableId, []);
+        // Fetch all documents with pagination (default limit is only 25)
+        let offset = 0;
+        const limit = 100;
+        let hasMore = true;
+
+        while (hasMore) {
+          const res = await databases.listDocuments(databaseId, merchantVotesTableId, [
+            Query.limit(limit),
+            Query.offset(offset),
+          ]);
+
+          allDocuments = allDocuments.concat(res.documents);
+          hasMore = res.documents.length === limit;
+          offset += limit;
+        }
+
         break;
       } catch (err: any) {
         attempt++;
@@ -89,6 +104,7 @@ async function getLearnedMappings(): Promise<MerchantMapping> {
           throw err;
         }
         // Small backoff
+        allDocuments = [];
         await new Promise((r) => setTimeout(r, 400));
       }
     }
@@ -97,7 +113,7 @@ async function getLearnedMappings(): Promise<MerchantMapping> {
     // Group votes by merchant and find the most popular category
     const votesByMerchant = new Map<string, Map<string, number>>();
     
-    res.documents.forEach((doc: any) => {
+    allDocuments.forEach((doc: any) => {
       const merchantKey = doc.merchant_key;
       const categoryId = doc.category_id;
       
