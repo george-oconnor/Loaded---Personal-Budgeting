@@ -13,6 +13,14 @@ const IMPORT_OPTIONS = [
     featured: true,
   },
   {
+    id: "pdf",
+    name: "PDF Statement Import",
+    icon: "file",
+    description: "Import from PDF bank statements using on-device text extraction",
+    color: "#8B5CF6",
+    featured: true,
+  },
+  {
     id: "aib",
     name: "AIB",
     icon: "briefcase",
@@ -46,6 +54,9 @@ export default function ImportScreen() {
         break;
       case "csv":
         router.push("/import/csv" as any);
+        break;
+      case "pdf":
+        router.push("/import/pdf" as any);
         break;
       case "manual":
         router.push("/add-transaction");

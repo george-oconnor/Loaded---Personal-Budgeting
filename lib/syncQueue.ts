@@ -29,7 +29,7 @@ export interface QueuedTransaction {
   createdAt: string;
   excludeFromAnalytics?: boolean;
   isAnalyticsProtected?: boolean;
-  source?: "revolut_import" | "aib_import" | "manual" | "other_import";
+  source?: "revolut_import" | "aib_import" | "manual" | "other_import" | "pdf_import";
   displayName?: string;
   account?: string;
   matchedTransferId?: string;
@@ -63,7 +63,7 @@ export async function queueTransactionsForSync(
     date: string;
     categoryId: string;
     currency: string;
-    source?: "revolut_import" | "aib_import" | "manual" | "other_import";
+    source?: "revolut_import" | "aib_import" | "manual" | "other_import" | "pdf_import";
     displayName?: string;
     account?: string;
     matchedTransferId?: string;

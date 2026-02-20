@@ -33,6 +33,13 @@
             "LSItemContentTypes": [
               "public.comma-separated-values-text"
             ]
+          },
+          {
+            "CFBundleTypeName": "PDF File",
+            "LSHandlerRank": "Alternate",
+            "LSItemContentTypes": [
+              "com.adobe.pdf"
+            ]
           }
         ],
         "UTImportedTypeDeclarations": [
