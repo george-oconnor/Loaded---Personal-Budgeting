@@ -77,6 +77,7 @@ export default function BalancesScreen() {
   };
 
   const getAccountIcon = (accountName: string): string => {
+    if (accountName.toLowerCase().includes('loan') || accountName.toLowerCase().includes('mortgage')) return 'home';
     if (accountName.toLowerCase().includes('vault')) return 'lock';
     if (accountName.toLowerCase().includes('pocket')) return 'pocket';
     if (accountName.toLowerCase().includes('savings')) return 'trending-up';
@@ -105,10 +106,12 @@ export default function BalancesScreen() {
     return date.toLocaleDateString('en-GB', { day: 'numeric', month: 'short', year: 'numeric' });
   };
 
-  const categorizeAccount = (account: AccountBalance): 'savings' | 'current' => {
+  const categorizeAccount = (account: AccountBalance): 'savings' | 'current' | 'loan' => {
     const name = account.accountName.toLowerCase();
     const type = account.accountType?.toLowerCase();
     
+    // Loan accounts
+    if (name.includes('loan') || name.includes('mortgage') || type === 'loan') return 'loan';
     // Vault counts as savings
     if (name.includes('vault') || type === 'vault') return 'savings';
     // Pocket counts as current
@@ -121,6 +124,7 @@ export default function BalancesScreen() {
 
   const currentAccounts = balances.filter(acc => categorizeAccount(acc) === 'current');
   const savingsAccounts = balances.filter(acc => categorizeAccount(acc) === 'savings');
+  const loanAccounts = balances.filter(acc => categorizeAccount(acc) === 'loan');
 
   // Calculate subtotals
   const currentTotal = currentAccounts.reduce((sum, account) => sum + account.balance, 0);
@@ -322,6 +326,68 @@ export default function BalancesScreen() {
               </View>
             )}
           </View>
+
+          {/* Loan Accounts */}
+          {loanAccounts.length > 0 && (
+            <View className="px-5 pb-6">
+              <Text className="text-lg font-bold text-dark-100 mb-3">Loan Accounts</Text>
+              <View className="gap-3">
+                {loanAccounts.map((account, index) => {
+                  const iconName = getAccountIcon(account.accountName);
+                  const color = getAccountColor(account.accountName);
+                  const rowKey = account.accountKey || `${account.accountName}-${account.currency}-${index}`;
+                  
+                  return (
+                    <Swipeable
+                      key={rowKey}
+                      renderRightActions={() => (
+                        <Pressable
+                          onPress={() => handleDeleteBalance(account)}
+                          className="flex-row items-center justify-center px-4 bg-red-500 rounded-2xl ml-2"
+                          style={{ width: 96 }}
+                        >
+                          <Feather name="trash-2" size={18} color="#fff" />
+                          <Text className="text-white font-semibold ml-2">Delete</Text>
+                        </Pressable>
+                      )}
+                      overshootRight={false}
+                    >
+                      <View
+                        className="flex-row items-center rounded-2xl bg-gray-50 px-4 py-4 border border-gray-100"
+                        style={deletingKey === rowKey ? { opacity: 0.5 } : undefined}
+                      >
+                        <View
+                          className="w-12 h-12 rounded-full items-center justify-center mr-4"
+                          style={{ backgroundColor: `${color}15` }}
+                        >
+                          <Feather name={iconName as any} size={20} color={color} />
+                        </View>
+                        <View className="flex-1 mr-3">
+                          <Text className="font-semibold text-dark-100 text-base" numberOfLines={1} ellipsizeMode="tail">
+                            {account.accountName}
+                          </Text>
+                          <Text className="text-xs text-gray-500 mt-1">
+                            Updated {formatDate(account.lastUpdated)}
+                          </Text>
+                        </View>
+                        <View className="items-end flex-shrink-0">
+                          <Text
+                            className={`font-bold text-lg ${account.balance < 0 ? 'text-red-500' : ''}`}
+                            style={account.balance < 0 ? undefined : { color }}
+                          >
+                            {formatCurrency(account.balance / 100, account.currency)}
+                          </Text>
+                          <Text className="text-xs text-gray-500 mt-1">
+                            {account.currency}
+                          </Text>
+                        </View>
+                      </View>
+                    </Swipeable>
+                  );
+                })}
+              </View>
+            </View>
+          )}
 
           {/* Info Footer */}
           <View className="px-5 pb-8">

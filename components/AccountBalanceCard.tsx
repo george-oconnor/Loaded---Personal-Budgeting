@@ -35,10 +35,12 @@ export default function AccountBalanceCard({ refreshTrigger }: AccountBalanceCar
     }
   };
 
-  const categorizeAccount = (account: AccountBalance): 'savings' | 'current' => {
+  const categorizeAccount = (account: AccountBalance): 'savings' | 'current' | 'loan' => {
     const name = account.accountName.toLowerCase();
     const type = account.accountType?.toLowerCase();
     
+    // Loan accounts
+    if (name.includes('loan') || name.includes('mortgage') || type === 'loan') return 'loan';
     // Vault counts as savings
     if (name.includes('vault') || type === 'vault') return 'savings';
     // Pocket counts as current
@@ -51,15 +53,18 @@ export default function AccountBalanceCard({ refreshTrigger }: AccountBalanceCar
 
   const savingsAccounts = balances.filter(acc => categorizeAccount(acc) === 'savings');
   const currentAccounts = balances.filter(acc => categorizeAccount(acc) === 'current');
+  const loanAccounts = balances.filter(acc => categorizeAccount(acc) === 'loan');
 
   const savingsTotal = savingsAccounts.reduce((sum, account) => sum + account.balance, 0);
   const currentTotal = currentAccounts.reduce((sum, account) => sum + account.balance, 0);
-  const totalBalance = savingsTotal + currentTotal;
+  const loanTotal = loanAccounts.reduce((sum, account) => sum + account.balance, 0);
+  const totalBalance = savingsTotal + currentTotal + loanTotal;
 
   const mainCurrency = balances.length > 0 ? balances[0].currency : "EUR";
 
   const getAccountIcon = (accountName: string): string => {
     const name = accountName.toLowerCase();
+    if (name.includes('loan') || name.includes('mortgage')) return 'home';
     if (name.includes('vault')) return 'lock';
     if (name.includes('pocket')) return 'inbox';
     if (name.includes('savings')) return 'trending-up';
@@ -131,6 +136,33 @@ export default function AccountBalanceCard({ refreshTrigger }: AccountBalanceCar
             </View>
             {savingsAccounts.map((account, index) => (
               <View key={`savings-${index}`} className="flex-row items-center justify-between py-2 border-t border-white/10">
+                <View className="flex-row items-center flex-1">
+                  <View className="w-8 h-8 rounded-full bg-white/20 items-center justify-center mr-3">
+                    <Feather name={getAccountIcon(account.accountName) as any} size={16} color="white" />
+                  </View>
+                  <Text className="text-white/90 text-sm flex-1" numberOfLines={1}>
+                    {account.accountName}
+                  </Text>
+                </View>
+                <Text className={`font-semibold text-sm ml-2 ${account.balance < 0 ? 'text-red-300' : 'text-white'}`}>
+                  {formatCurrency(account.balance / 100, account.currency)}
+                </Text>
+              </View>
+            ))}
+          </View>
+        )}
+
+        {/* Loan Accounts Section */}
+        {loanAccounts.length > 0 && (
+          <View>
+            <View className="flex-row items-center justify-between mb-2">
+              <Text className="text-white/70 text-xs font-semibold uppercase tracking-wide">Loans</Text>
+              <Text className={`text-sm font-bold ${loanTotal < 0 ? 'text-red-300' : 'text-white/90'}`}>
+                {formatCurrency(loanTotal / 100, mainCurrency)}
+              </Text>
+            </View>
+            {loanAccounts.map((account, index) => (
+              <View key={`loan-${index}`} className="flex-row items-center justify-between py-2 border-t border-white/10">
                 <View className="flex-row items-center flex-1">
                   <View className="w-8 h-8 rounded-full bg-white/20 items-center justify-center mr-3">
                     <Feather name={getAccountIcon(account.accountName) as any} size={16} color="white" />

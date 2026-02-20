@@ -192,7 +192,7 @@ export default function CSVSelectAccountScreen() {
                   Account Type
                 </Text>
                 <View className="flex-row gap-2">
-                  {["Current", "Savings", "Credit Card"].map((type) => (
+                  {["Current", "Savings", "Credit Card", "Loan"].map((type) => (
                     <Pressable
                       key={type}
                       onPress={() => setNewAccountType(type)}

@@ -126,7 +126,7 @@ export default function SelectAccountScreen() {
               <View>
                 <Text className="text-xs font-semibold text-gray-700 mb-2">Account Type</Text>
                 <View className="flex-row gap-2">
-                  {["Current", "Savings", "Credit Card"].map((type) => (
+                  {["Current", "Savings", "Credit Card", "Loan"].map((type) => (
                     <Pressable
                       key={type}
                       onPress={() => setNewAccountType(type)}
