@@ -254,20 +254,7 @@ export default function RootLayout() {
             title,
             message,
             [
-              {
-                text: 'OK',
-                style: 'default',
-                onPress: () => {
-                  const pathname = 
-                    provider === 'aib' ? '/import/aib/paste' :
-                    provider === 'revolut' ? '/import/revolut/paste' :
-                    '/import/csv/paste';
-                  router.push({
-                    pathname,
-                    params: { csvContent: fileContent }
-                  } as any);
-                }
-              },
+              { text: 'Cancel', style: 'cancel' },
               {
                 text: 'Change Import Type',
                 onPress: () => {
@@ -280,7 +267,21 @@ export default function RootLayout() {
                   } as any);
                 }
               },
-              { text: 'Cancel', style: 'cancel' }
+              {
+                text: 'OK',
+                style: 'default',
+                isPreferred: true,
+                onPress: () => {
+                  const pathname = 
+                    provider === 'aib' ? '/import/aib/paste' :
+                    provider === 'revolut' ? '/import/revolut/paste' :
+                    '/import/csv/paste';
+                  router.push({
+                    pathname,
+                    params: { csvContent: fileContent }
+                  } as any);
+                }
+              },
             ]
           );
 
