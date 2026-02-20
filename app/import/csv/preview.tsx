@@ -2,9 +2,9 @@ import { saveBalanceSnapshot, updateAccountBalance, upsertBalanceRemote } from "
 import { getAllTransactionsForUser, updateTransaction } from "@/lib/appwrite";
 import { getTransferCategoryId } from "@/lib/categorization";
 import { detectTransferPairs, ParsedTransaction } from "@/lib/csvParser";
+import { formatCurrency } from "@/lib/currencyFunctions";
 import { saveLastImportDate } from "@/lib/notifications";
 import { queueTransactionsForSync } from "@/lib/syncQueue";
-import { useHomeStore } from "@/store/useHomeStore";
 import { useSessionStore } from "@/store/useSessionStore";
 import { Feather } from "@expo/vector-icons";
 import { ID } from "appwrite";
@@ -49,7 +49,6 @@ const makeKeyFromDoc = (doc: any) =>
 
 export default function GenericCSVPreviewScreen() {
   const { user } = useSessionStore();
-  const { fetchHome } = useHomeStore();
   const params = useLocalSearchParams();
   
   // Get account info from params (passed from select-account screen)
@@ -344,9 +343,8 @@ export default function GenericCSVPreviewScreen() {
         [
           {
             text: "View Home",
-            onPress: async () => {
+            onPress: () => {
               clearParsedTransactions();
-              await fetchHome();
               router.replace("/");
             },
           },
@@ -375,9 +373,7 @@ export default function GenericCSVPreviewScreen() {
 
   const formatAmount = (amount: number, kind: "income" | "expense", currency: string = 'EUR') => {
     const sign = kind === "income" ? "+" : "-";
-    const value = (amount / 100).toFixed(2);
-    const currencySymbol = currency === 'USD' ? '$' : currency === 'GBP' ? '£' : '€';
-    return `${sign}${currencySymbol}${value}`;
+    return `${sign}${formatCurrency(amount / 100, currency)}`;
   };
 
   const formatDate = (dateStr: string) => {
@@ -450,21 +446,25 @@ export default function GenericCSVPreviewScreen() {
             <View className="flex-1 rounded-lg bg-green-50 p-3">
               <Text className="text-xs text-green-700 font-semibold">Income</Text>
               <Text className="text-lg font-bold text-green-700 mt-1">
-                €{(
+                {formatCurrency(
                   transactions
                     .filter((t) => t.kind === "income")
-                    .reduce((sum, t) => sum + t.amount, 0) / 100
-                ).toFixed(2)}
+                    .reduce((sum, t) => sum + t.amount, 0) / 100,
+                  transactions[0]?.currency || 'EUR'
+                )}
               </Text>
             </View>
             <View className="flex-1 rounded-lg bg-red-50 p-3">
               <Text className="text-xs text-red-700 font-semibold">Expenses</Text>
               <Text className="text-lg font-bold text-red-700 mt-1">
-                €{Math.abs(
-                  transactions
-                    .filter((t) => t.kind === "expense")
-                    .reduce((sum, t) => sum + t.amount, 0) / 100
-                ).toFixed(2)}
+                {formatCurrency(
+                  Math.abs(
+                    transactions
+                      .filter((t) => t.kind === "expense")
+                      .reduce((sum, t) => sum + t.amount, 0)
+                  ) / 100,
+                  transactions[0]?.currency || 'EUR'
+                )}
               </Text>
             </View>
           </View>
@@ -505,7 +505,7 @@ export default function GenericCSVPreviewScreen() {
 
         {/* Transaction List */}
         <FlatList
-          data={transactions}
+          data={[...transactions].sort((a, b) => new Date(b.date).getTime() - new Date(a.date).getTime())}
           keyExtractor={(_, index) => index.toString()}
           renderItem={({ item }) => {
             const key = makeKeyFromTransaction(item);

@@ -572,7 +572,7 @@ export default function ImportPreviewScreen() {
         </View>
 
         <FlatList
-          data={transactions}
+          data={[...transactions].sort((a, b) => new Date(b.date).getTime() - new Date(a.date).getTime())}
           keyExtractor={(_, idx) => `tx-${idx}`}
           renderItem={renderItem}
           contentContainerStyle={{ padding: 20, paddingBottom: 140 }}
