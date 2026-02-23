@@ -3,10 +3,96 @@ import { convertCurrency, formatCurrency, getExchangeRates, getPrimaryCurrency }
 import { useSessionStore } from "@/store/useSessionStore";
 import { Feather } from "@expo/vector-icons";
 import { router } from "expo-router";
-import { useEffect, useState } from "react";
-import { ActivityIndicator, Alert, Pressable, RefreshControl, ScrollView, Text, View } from "react-native";
+import { useCallback, useEffect, useState } from "react";
+import { ActivityIndicator, Alert, LayoutAnimation, Platform, Pressable, RefreshControl, ScrollView, Text, UIManager, View } from "react-native";
 import { Swipeable } from "react-native-gesture-handler";
 import { SafeAreaView } from "react-native-safe-area-context";
+
+// Enable LayoutAnimation on Android
+if (Platform.OS === 'android' && UIManager.setLayoutAnimationEnabledExperimental) {
+  UIManager.setLayoutAnimationEnabledExperimental(true);
+}
+
+type CategoryKey = 'current' | 'savings' | 'loan' | 'credit-card';
+
+interface CategoryConfig {
+  key: CategoryKey;
+  label: string;
+  icon: string;
+  color: string;
+  bgColor: string;
+}
+
+const CATEGORIES: CategoryConfig[] = [
+  { key: 'current', label: 'Current Accounts', icon: 'credit-card', color: '#6366F1', bgColor: '#EEF2FF' },
+  { key: 'savings', label: 'Savings', icon: 'trending-up', color: '#10B981', bgColor: '#ECFDF5' },
+  { key: 'credit-card', label: 'Credit Cards', icon: 'credit-card', color: '#EF4444', bgColor: '#FEF2F2' },
+  { key: 'loan', label: 'Loans', icon: 'home', color: '#F59E0B', bgColor: '#FFFBEB' },
+];
+
+// --- Reusable account row ---
+function AccountRow({
+  account,
+  deletingKey,
+  onDelete,
+  iconName,
+  accentColor,
+  formatDate,
+}: {
+  account: AccountBalance;
+  deletingKey: string | null;
+  onDelete: (a: AccountBalance) => void;
+  iconName: string;
+  accentColor: string;
+  formatDate: (d: string) => string;
+}) {
+  const rowKey = account.accountKey || `${account.accountName}-${account.currency}`;
+  return (
+    <Swipeable
+      renderRightActions={() => (
+        <Pressable
+          onPress={() => onDelete(account)}
+          className="items-center justify-center bg-red-500 rounded-2xl ml-2"
+          style={{ width: 80 }}
+        >
+          <Feather name="trash-2" size={18} color="#fff" />
+          <Text className="text-white text-xs font-medium mt-1">Delete</Text>
+        </Pressable>
+      )}
+      overshootRight={false}
+    >
+      <View
+        className="flex-row items-center py-3 px-1"
+        style={deletingKey === rowKey ? { opacity: 0.4 } : undefined}
+      >
+        <View
+          className="w-10 h-10 rounded-xl items-center justify-center mr-3"
+          style={{ backgroundColor: `${accentColor}12` }}
+        >
+          <Feather name={iconName as any} size={18} color={accentColor} />
+        </View>
+        <View className="flex-1 mr-3">
+          <Text className="font-semibold text-gray-900 text-sm" numberOfLines={1} ellipsizeMode="tail">
+            {account.accountName}
+          </Text>
+          <Text className="text-xs text-gray-400 mt-0.5">
+            {formatDate(account.lastUpdated)}
+          </Text>
+        </View>
+        <View className="items-end">
+          <Text
+            className={`font-bold text-base ${account.balance < 0 ? 'text-red-500' : account.balance > 0 ? 'text-green-600' : 'text-gray-900'}`}
+          >
+            {formatCurrency(account.balance / 100, account.currency)}
+          </Text>
+          {account.currency && (
+            <Text className="text-xs text-gray-400 mt-0.5">{account.currency}</Text>
+          )}
+        </View>
+      </View>
+    </Swipeable>
+  );
+}
 
 export default function BalancesScreen() {
   const [balances, setBalances] = useState<AccountBalance[]>([]);
@@ -15,6 +101,7 @@ export default function BalancesScreen() {
   const [deletingKey, setDeletingKey] = useState<string | null>(null);
   const [exchangeRates, setExchangeRates] = useState<Record<string, number>>({});
   const [ratesStale, setRatesStale] = useState(false);
+  const [collapsedSections, setCollapsedSections] = useState<Set<CategoryKey>>(new Set(['current', 'savings', 'loan', 'credit-card']));
   const { user } = useSessionStore();
 
   const sortBalances = (data: AccountBalance[]) =>
@@ -23,14 +110,12 @@ export default function BalancesScreen() {
   const loadBalances = async () => {
     try {
       const data = await getAccountBalances(user?.id);
-      // Sort by account name for consistent display
       const sorted = sortBalances(data);
       setBalances(sorted);
 
-      // Fetch exchange rates based on the primary currency
       const currencies = sorted.map(b => b.currency);
-      const hasMultipleCurrencies = new Set(currencies).size > 1;
-      if (hasMultipleCurrencies) {
+      const hasMultiple = new Set(currencies).size > 1;
+      if (hasMultiple) {
         const primary = getPrimaryCurrency(currencies);
         const { rates, stale } = await getExchangeRates(primary);
         setExchangeRates(rates);
@@ -48,10 +133,20 @@ export default function BalancesScreen() {
     loadBalances();
   }, [user?.id]);
 
+  const toggleSection = useCallback((key: CategoryKey) => {
+    LayoutAnimation.configureNext(LayoutAnimation.Presets.easeInEaseOut);
+    setCollapsedSections(prev => {
+      const next = new Set(prev);
+      if (next.has(key)) next.delete(key);
+      else next.add(key);
+      return next;
+    });
+  }, []);
+
   const handleDeleteBalance = (account: AccountBalance) => {
     Alert.alert(
       "Delete balance?",
-      `Remove ${account.accountName} from this list${user?.id ? " and Appwrite" : ""}?`,
+      `Remove ${account.accountName}${user?.id ? " from all devices" : ""}?`,
       [
         { text: "Cancel", style: "cancel" },
         {
@@ -69,10 +164,11 @@ export default function BalancesScreen() {
                 provider: account.provider,
                 userId: user?.id,
               });
+              LayoutAnimation.configureNext(LayoutAnimation.Presets.easeInEaseOut);
               setBalances(sortBalances(updated));
             } catch (err) {
               console.error('Error deleting balance:', err);
-              Alert.alert('Delete failed', 'We could not remove this balance. Please try again.');
+              Alert.alert('Delete failed', 'Could not remove this balance. Please try again.');
               await loadBalances();
             } finally {
               setDeletingKey(null);
@@ -89,16 +185,18 @@ export default function BalancesScreen() {
   };
 
   const getAccountIcon = (accountName: string): string => {
-    if (accountName.toLowerCase().includes('loan') || accountName.toLowerCase().includes('mortgage')) return 'home';
-    if (accountName.toLowerCase().includes('vault')) return 'lock';
-    if (accountName.toLowerCase().includes('pocket')) return 'pocket';
-    if (accountName.toLowerCase().includes('savings')) return 'trending-up';
+    const name = accountName.toLowerCase();
+    if (name.includes('loan') || name.includes('mortgage')) return 'home';
+    if (name.includes('vault')) return 'lock';
+    if (name.includes('pocket')) return 'pocket';
+    if (name.includes('savings')) return 'trending-up';
     return 'credit-card';
   };
 
   const getAccountColor = (accountName: string): string => {
-    if (accountName.toLowerCase().includes('revolut')) return '#7C3AED';
-    if (accountName.toLowerCase().includes('aib')) return '#10B981';
+    const name = accountName.toLowerCase();
+    if (name.includes('revolut')) return '#7C3AED';
+    if (name.includes('aib')) return '#10B981';
     return '#6366F1';
   };
 
@@ -114,67 +212,60 @@ export default function BalancesScreen() {
     if (diffMins < 60) return `${diffMins}m ago`;
     if (diffHours < 24) return `${diffHours}h ago`;
     if (diffDays < 7) return `${diffDays}d ago`;
-    
     return date.toLocaleDateString('en-GB', { day: 'numeric', month: 'short', year: 'numeric' });
   };
 
-  const categorizeAccount = (account: AccountBalance): 'savings' | 'current' | 'loan' => {
+  const categorizeAccount = (account: AccountBalance): CategoryKey => {
     const name = account.accountName.toLowerCase();
     const type = account.accountType?.toLowerCase();
-    
-    // Loan accounts
+    if (type === 'credit card' || type === 'credit-card' || type === 'creditcard' ||
+        name.includes('credit card') || name.includes('creditcard')) return 'credit-card';
     if (name.includes('loan') || name.includes('mortgage') || type === 'loan') return 'loan';
-    // Vault counts as savings
     if (name.includes('vault') || type === 'vault') return 'savings';
-    // Pocket counts as current
     if (name.includes('pocket') || type === 'pocket') return 'current';
-    // Use accountType if available
     if (type === 'savings') return 'savings';
-    // Default to current
     return 'current';
   };
 
-  const currentAccounts = balances.filter(acc => categorizeAccount(acc) === 'current');
-  const savingsAccounts = balances.filter(acc => categorizeAccount(acc) === 'savings');
-  const loanAccounts = balances.filter(acc => categorizeAccount(acc) === 'loan');
+  // Group accounts by category
+  const grouped = balances.reduce<Record<CategoryKey, AccountBalance[]>>((acc, bal) => {
+    const cat = categorizeAccount(bal);
+    acc[cat].push(bal);
+    return acc;
+  }, { current: [], savings: [], loan: [], 'credit-card': [] });
 
-  // Determine the display currency (most common across accounts)
   const displayCurrency = getPrimaryCurrency(balances.map(b => b.currency));
   const hasMultipleCurrencies = new Set(balances.map(b => b.currency)).size > 1;
 
-  // Convert a balance to the display currency
   const toDisplayCurrency = (balance: number, fromCurrency: string) => {
     if (fromCurrency === displayCurrency || !hasMultipleCurrencies) return balance;
     return convertCurrency(balance, fromCurrency, displayCurrency, exchangeRates);
   };
 
-  // Calculate subtotals (converted to display currency)
-  const currentTotal = currentAccounts.reduce((sum, account) => sum + toDisplayCurrency(account.balance, account.currency), 0);
-  const savingsTotal = savingsAccounts.reduce((sum, account) => sum + toDisplayCurrency(account.balance, account.currency), 0);
+  const totalBalance = balances.reduce((sum, a) => sum + toDisplayCurrency(a.balance, a.currency), 0);
 
-  // Calculate total across all accounts (converted to display currency)
-  const totalBalance = balances.reduce((sum, account) => {
-    return sum + toDisplayCurrency(account.balance, account.currency);
+  // Only show categories with accounts
+  const activeCategories = CATEGORIES.filter(c => grouped[c.key].length > 0);
+
+  // Proportion bar widths
+  const absTotal = activeCategories.reduce((sum, c) => {
+    return sum + Math.abs(grouped[c.key].reduce((s, a) => s + toDisplayCurrency(a.balance, a.currency), 0));
   }, 0);
 
   return (
-    <SafeAreaView className="flex-1 bg-white">
+    <SafeAreaView className="flex-1 bg-gray-50">
       {/* Header */}
-      <View className="bg-white px-5 pt-2 pb-6">
+      <View className="bg-white px-5 pt-2 pb-4 border-b border-gray-100">
         <View className="flex-row items-center justify-between">
           <Pressable
             onPress={() => router.back()}
-            className="flex-row items-center gap-2"
+            className="flex-row items-center gap-1"
           >
             <Feather name="chevron-left" size={20} color="#7C3AED" />
             <Text className="text-primary text-base font-semibold">Back</Text>
           </Pressable>
-          
-          <Text className="text-xs text-gray-500">Account Balances</Text>
-        </View>
-        
-        <View className="mt-1">
-          <Text className="text-2xl font-bold text-dark-100 text-right">Your Accounts</Text>
+          <Text className="text-lg font-bold text-gray-900">Accounts</Text>
+          <View style={{ width: 60 }} />
         </View>
       </View>
 
@@ -202,233 +293,147 @@ export default function BalancesScreen() {
         <ScrollView
           className="flex-1"
           showsVerticalScrollIndicator={false}
-          contentContainerStyle={{ paddingTop: 0 }}
-          style={{ marginTop: -20 }}
+          contentContainerStyle={{ paddingBottom: 40 }}
           refreshControl={
             <RefreshControl refreshing={refreshing} onRefresh={handleRefresh} />
           }
         >
-          {/* Total Balance Card */}
-          <View className="px-5 mb-6 pt-5" style={{ zIndex: 10, elevation: 10 }}>
-            <View className="rounded-3xl bg-primary px-6 py-6 shadow-md">
-              <Text className="text-white/80 text-sm mb-1">Total Balance</Text>
-              <Text className="text-white text-4xl font-bold">
-                {formatCurrency(totalBalance / 100, displayCurrency)}
+          {/* Total Balance Header */}
+          <View className="bg-white px-5 pt-6 pb-5">
+            <Text className="text-gray-500 text-sm mb-1">Total Balance</Text>
+            <Text className={`text-3xl font-bold ${totalBalance < 0 ? 'text-red-500' : totalBalance > 0 ? 'text-green-600' : 'text-gray-900'}`}>
+              {formatCurrency(totalBalance / 100, displayCurrency)}
+            </Text>
+            <Text className="text-gray-400 text-xs mt-1">
+              {balances.length} account{balances.length !== 1 ? 's' : ''}
+              {hasMultipleCurrencies ? ` · Converted to ${displayCurrency}` : ''}
+            </Text>
+            {hasMultipleCurrencies && ratesStale && (
+              <Text className="text-amber-500 text-xs mt-1">
+                Using approximate exchange rates
               </Text>
-              <Text className="text-white/60 text-xs mt-2">
-                Across {balances.length} account{balances.length !== 1 ? 's' : ''}
-                {hasMultipleCurrencies ? ` · Converted to ${displayCurrency}` : ''}
-              </Text>
-              {hasMultipleCurrencies && ratesStale && (
-                <Text className="text-white/40 text-xs mt-1">
-                  ⚠ Using approximate exchange rates
-                </Text>
-              )}
-            </View>
-          </View>
-
-          {/* Account List */}
-          <View className="px-5 pb-6">
-            {/* Current Accounts */}
-            {currentAccounts.length > 0 && (
-              <View className="mb-6">
-                <Text className="text-lg font-bold text-dark-100 mb-3">Current Accounts</Text>
-                <View className="gap-3">
-                  {currentAccounts.map((account, index) => {
-                    const iconName = getAccountIcon(account.accountName);
-                    const color = getAccountColor(account.accountName);
-                    const rowKey = account.accountKey || `${account.accountName}-${account.currency}-${index}`;
-                    
-                    return (
-                      <Swipeable
-                        key={rowKey}
-                        renderRightActions={() => (
-                          <Pressable
-                            onPress={() => handleDeleteBalance(account)}
-                            className="flex-row items-center justify-center px-4 bg-red-500 rounded-2xl ml-2"
-                            style={{ width: 96 }}
-                          >
-                            <Feather name="trash-2" size={18} color="#fff" />
-                            <Text className="text-white font-semibold ml-2">Delete</Text>
-                          </Pressable>
-                        )}
-                        overshootRight={false}
-                      >
-                        <View
-                          className="flex-row items-center rounded-2xl bg-gray-50 px-4 py-4 border border-gray-100"
-                          style={deletingKey === rowKey ? { opacity: 0.5 } : undefined}
-                        >
-                          <View
-                            className="w-12 h-12 rounded-full items-center justify-center mr-4"
-                            style={{ backgroundColor: `${color}15` }}
-                          >
-                            <Feather name={iconName as any} size={20} color={color} />
-                          </View>
-                          <View className="flex-1 mr-3">
-                            <Text className="font-semibold text-dark-100 text-base" numberOfLines={1} ellipsizeMode="tail">
-                              {account.accountName}
-                            </Text>
-                            <Text className="text-xs text-gray-500 mt-1">
-                              Updated {formatDate(account.lastUpdated)}
-                            </Text>
-                          </View>
-                          <View className="items-end flex-shrink-0">
-                            <Text
-                              className={`font-bold text-lg ${account.balance < 0 ? 'text-red-500' : ''}`}
-                              style={account.balance < 0 ? undefined : { color }}
-                            >
-                              {formatCurrency(account.balance / 100, account.currency)}
-                            </Text>
-                            <Text className="text-xs text-gray-500 mt-1">
-                              {account.currency}
-                            </Text>
-                          </View>
-                        </View>
-                      </Swipeable>
-                    );
-                  })}
-                </View>
-              </View>
             )}
 
-            {/* Savings Accounts */}
-            {savingsAccounts.length > 0 && (
-              <View>
-                <Text className="text-lg font-bold text-dark-100 mb-3">Savings Accounts</Text>
-                <View className="gap-3">
-                  {savingsAccounts.map((account, index) => {
-                    const iconName = getAccountIcon(account.accountName);
-                    const color = getAccountColor(account.accountName);
-                    const rowKey = account.accountKey || `${account.accountName}-${account.currency}-${index}`;
-                    
-                    return (
-                      <Swipeable
-                        key={rowKey}
-                        renderRightActions={() => (
-                          <Pressable
-                            onPress={() => handleDeleteBalance(account)}
-                            className="flex-row items-center justify-center px-4 bg-red-500 rounded-2xl ml-2"
-                            style={{ width: 96 }}
-                          >
-                            <Feather name="trash-2" size={18} color="#fff" />
-                            <Text className="text-white font-semibold ml-2">Delete</Text>
-                          </Pressable>
-                        )}
-                        overshootRight={false}
-                      >
-                        <View
-                          className="flex-row items-center rounded-2xl bg-gray-50 px-4 py-4 border border-gray-100"
-                          style={deletingKey === rowKey ? { opacity: 0.5 } : undefined}
-                        >
-                          <View
-                            className="w-12 h-12 rounded-full items-center justify-center mr-4"
-                            style={{ backgroundColor: `${color}15` }}
-                          >
-                            <Feather name={iconName as any} size={20} color={color} />
-                          </View>
-                          <View className="flex-1 mr-3">
-                            <Text className="font-semibold text-dark-100 text-base" numberOfLines={1} ellipsizeMode="tail">
-                              {account.accountName}
-                            </Text>
-                            <Text className="text-xs text-gray-500 mt-1">
-                              Updated {formatDate(account.lastUpdated)}
-                            </Text>
-                          </View>
-                          <View className="items-end flex-shrink-0">
-                            <Text
-                              className={`font-bold text-lg ${account.balance < 0 ? 'text-red-500' : ''}`}
-                              style={account.balance < 0 ? undefined : { color }}
-                            >
-                              {formatCurrency(account.balance / 100, account.currency)}
-                            </Text>
-                            <Text className="text-xs text-gray-500 mt-1">
-                              {account.currency}
-                            </Text>
-                          </View>
-                        </View>
-                      </Swipeable>
-                    );
-                  })}
-                </View>
-              </View>
-            )}
-          </View>
-
-          {/* Loan Accounts */}
-          {loanAccounts.length > 0 && (
-            <View className="px-5 pb-6">
-              <Text className="text-lg font-bold text-dark-100 mb-3">Loan Accounts</Text>
-              <View className="gap-3">
-                {loanAccounts.map((account, index) => {
-                  const iconName = getAccountIcon(account.accountName);
-                  const color = getAccountColor(account.accountName);
-                  const rowKey = account.accountKey || `${account.accountName}-${account.currency}-${index}`;
-                  
+            {/* Proportion bar */}
+            {activeCategories.length > 1 && absTotal > 0 && (
+              <View className="flex-row h-2.5 rounded-full overflow-hidden mt-4">
+                {activeCategories.map((cat, i) => {
+                  const catAbs = Math.abs(grouped[cat.key].reduce((s, a) => s + toDisplayCurrency(a.balance, a.currency), 0));
+                  const pct = (catAbs / absTotal) * 100;
+                  if (pct < 1) return null;
                   return (
-                    <Swipeable
-                      key={rowKey}
-                      renderRightActions={() => (
-                        <Pressable
-                          onPress={() => handleDeleteBalance(account)}
-                          className="flex-row items-center justify-center px-4 bg-red-500 rounded-2xl ml-2"
-                          style={{ width: 96 }}
-                        >
-                          <Feather name="trash-2" size={18} color="#fff" />
-                          <Text className="text-white font-semibold ml-2">Delete</Text>
-                        </Pressable>
-                      )}
-                      overshootRight={false}
-                    >
-                      <View
-                        className="flex-row items-center rounded-2xl bg-gray-50 px-4 py-4 border border-gray-100"
-                        style={deletingKey === rowKey ? { opacity: 0.5 } : undefined}
-                      >
-                        <View
-                          className="w-12 h-12 rounded-full items-center justify-center mr-4"
-                          style={{ backgroundColor: `${color}15` }}
-                        >
-                          <Feather name={iconName as any} size={20} color={color} />
-                        </View>
-                        <View className="flex-1 mr-3">
-                          <Text className="font-semibold text-dark-100 text-base" numberOfLines={1} ellipsizeMode="tail">
-                            {account.accountName}
-                          </Text>
-                          <Text className="text-xs text-gray-500 mt-1">
-                            Updated {formatDate(account.lastUpdated)}
-                          </Text>
-                        </View>
-                        <View className="items-end flex-shrink-0">
-                          <Text
-                            className={`font-bold text-lg ${account.balance < 0 ? 'text-red-500' : ''}`}
-                            style={account.balance < 0 ? undefined : { color }}
-                          >
-                            {formatCurrency(account.balance / 100, account.currency)}
-                          </Text>
-                          <Text className="text-xs text-gray-500 mt-1">
-                            {account.currency}
-                          </Text>
-                        </View>
-                      </View>
-                    </Swipeable>
+                    <View
+                      key={cat.key}
+                      style={{
+                        width: `${pct}%` as any,
+                        backgroundColor: cat.color,
+                        marginLeft: i > 0 ? 2 : 0,
+                        borderRadius: 6,
+                      }}
+                    />
                   );
                 })}
               </View>
-            </View>
-          )}
+            )}
+
+            {/* Legend */}
+            {activeCategories.length > 1 && (
+              <View className="flex-row flex-wrap mt-3 gap-x-4 gap-y-1">
+                {activeCategories.map(cat => (
+                  <View key={cat.key} className="flex-row items-center">
+                    <View className="w-2.5 h-2.5 rounded-full mr-1.5" style={{ backgroundColor: cat.color }} />
+                    <Text className="text-xs text-gray-500">{cat.label}</Text>
+                  </View>
+                ))}
+              </View>
+            )}
+          </View>
+
+          {/* Category Sections */}
+          <View className="px-4 pt-4">
+            {activeCategories.map((cat) => {
+              const accounts = grouped[cat.key];
+              const catTotal = accounts.reduce((s, a) => s + toDisplayCurrency(a.balance, a.currency), 0);
+              const isCollapsed = collapsedSections.has(cat.key);
+
+              return (
+                <View key={cat.key} className="mb-4">
+                  {/* Section header — tinted background, tappable */}
+                  <Pressable
+                    onPress={() => toggleSection(cat.key)}
+                    className="flex-row items-center px-4 py-3.5"
+                    style={{
+                      backgroundColor: cat.bgColor,
+                      borderTopLeftRadius: 16,
+                      borderTopRightRadius: 16,
+                      borderBottomLeftRadius: isCollapsed ? 16 : 0,
+                      borderBottomRightRadius: isCollapsed ? 16 : 0,
+                      borderWidth: 1,
+                      borderColor: `${cat.color}20`,
+                    }}
+                  >
+                    <View
+                      className="w-9 h-9 rounded-xl items-center justify-center mr-3"
+                      style={{ backgroundColor: `${cat.color}18` }}
+                    >
+                      <Feather name={cat.icon as any} size={16} color={cat.color} />
+                    </View>
+                    <View className="flex-1">
+                      <Text className="font-bold text-gray-900 text-base">{cat.label}</Text>
+                      <Text className="text-xs mt-0.5" style={{ color: `${cat.color}99` }}>
+                        {accounts.length} account{accounts.length !== 1 ? 's' : ''} · Tap to {isCollapsed ? 'expand' : 'collapse'}
+                      </Text>
+                    </View>
+                    <Text className={`font-bold text-base mr-2 ${catTotal < 0 ? 'text-red-500' : catTotal > 0 ? 'text-green-600' : 'text-gray-900'}`}>
+                      {formatCurrency(catTotal / 100, displayCurrency)}
+                    </Text>
+                    <Feather
+                      name={isCollapsed ? 'chevron-down' : 'chevron-up'}
+                      size={18}
+                      color={cat.color}
+                    />
+                  </Pressable>
+
+                  {/* Accounts list — visually connected under the header */}
+                  {!isCollapsed && (
+                    <View
+                      className="bg-white px-3"
+                      style={{
+                        borderBottomLeftRadius: 16,
+                        borderBottomRightRadius: 16,
+                        borderWidth: 1,
+                        borderTopWidth: 0,
+                        borderColor: '#F3F4F6',
+                      }}
+                    >
+                      {accounts.map((account, index) => (
+                        <View key={account.accountKey || `${account.accountName}-${account.currency}-${index}`}>
+                          {index > 0 && <View className="h-px bg-gray-100 mx-1" />}
+                          <AccountRow
+                            account={account}
+                            deletingKey={deletingKey}
+                            onDelete={handleDeleteBalance}
+                            iconName={getAccountIcon(account.accountName)}
+                            accentColor={cat.color}
+                            formatDate={formatDate}
+                          />
+                        </View>
+                      ))}
+                    </View>
+                  )}
+                </View>
+              );
+            })}
+          </View>
 
           {/* Info Footer */}
-          <View className="px-5 pb-8">
-            <View className="bg-blue-50 rounded-2xl px-4 py-4 border border-blue-100">
+          <View className="px-4 pt-2 pb-4">
+            <View className="bg-blue-50 rounded-2xl px-4 py-3 border border-blue-100">
               <View className="flex-row items-start gap-3">
-                <Feather name="info" size={18} color="#3B82F6" />
-                <View className="flex-1">
-                  <Text className="text-blue-900 text-sm font-semibold mb-1">
-                    About Account Balances
-                  </Text>
-                  <Text className="text-blue-700 text-xs leading-5">
-                    Balances are extracted from your imported transaction files and show the balance at the time of the last transaction in each import.
-                  </Text>
-                </View>
+                <Feather name="info" size={16} color="#3B82F6" style={{ marginTop: 1 }} />
+                <Text className="text-blue-700 text-xs leading-5 flex-1">
+                  Balances are from your imported files, showing the balance at the time of the last transaction in each import.
+                </Text>
               </View>
             </View>
           </View>

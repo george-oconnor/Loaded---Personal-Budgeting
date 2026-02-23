@@ -108,7 +108,7 @@ export default function Index() {
         
         {hasTransactions ? (
           <>
-            <IncomeExpenseRow summary={summary} loading={loading} />
+            <IncomeExpenseRow summary={summary} loading={loading} transactions={transactions} />
             <AccountBalanceCard refreshTrigger={refreshTrigger} />
             <QuickActions actions={quickActions} />
             <TransactionsSection transactions={transactions} categories={categories} currency={summary?.currency ?? "EUR"} loading={loading} />

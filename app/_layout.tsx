@@ -117,8 +117,42 @@ export default function RootLayout() {
         return;
       }
 
-      // Handle file:// URLs (CSV files shared to the app)
+      // Handle file:// URLs (CSV or PDF files shared to the app)
       if (event.url.startsWith('file://')) {
+        const fileExtension = event.url.split('.').pop()?.toLowerCase()?.split('?')[0] || '';
+        
+        // Handle PDF files — route directly to PDF import with the file URI
+        if (fileExtension === 'pdf') {
+          console.log('PDF import: Handling file URL:', event.url);
+          try {
+            Alert.alert(
+              'PDF Statement Detected',
+              'Import transactions from this PDF bank statement?',
+              [
+                { text: 'Cancel', style: 'cancel' },
+                {
+                  text: 'Import',
+                  isPreferred: true,
+                  onPress: () => {
+                    router.push({
+                      pathname: '/import/pdf/pick',
+                      params: { sharedFileUri: event.url }
+                    } as any);
+                  }
+                },
+              ]
+            );
+          } catch (error) {
+            console.error('Error handling PDF file:', error);
+            captureException(error as Error, {
+              contexts: { pdf_import: { fileUrl: event.url } },
+              tags: { feature: 'pdf_import', event_type: 'file_handle_error' }
+            });
+            Alert.alert('Error', 'Failed to open the PDF file.');
+          }
+          return;
+        }
+        
         console.log('CSV import: Handling file URL:', event.url);
         // CSV import handler invoked - no need to log to Sentry
         

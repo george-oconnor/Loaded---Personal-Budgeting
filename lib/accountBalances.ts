@@ -109,6 +109,7 @@ export async function updateAccountBalance(
 
 function guessAccountType(name: string): string {
   const normalized = name.toLowerCase();
+  if (normalized.includes('credit card') || normalized.includes('creditcard') || normalized.includes('credit-card')) return 'Credit Card';
   if (normalized.includes('vault') || normalized.includes('savings')) return 'vault';
   if (normalized.includes('pocket')) return 'pocket';
   if (normalized.includes('loan') || normalized.includes('mortgage')) return 'loan';

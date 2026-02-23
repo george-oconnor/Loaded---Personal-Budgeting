@@ -84,7 +84,18 @@ export const useNotificationStore = create<NotificationState>((set, get) => ({
         new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime()
       );
       notifications = notifications.slice(0, MAX_NOTIFICATIONS);
-      
+
+      // Deduplicate singleton budget notification types — keep only the newest of each
+      const singletonTypes: NotificationType[] = ['budget_warning', 'budget_exceeded', 'budget_on_track'];
+      const seenSingletonTypes = new Set<NotificationType>();
+      notifications = notifications.filter(n => {
+        if (singletonTypes.includes(n.type)) {
+          if (seenSingletonTypes.has(n.type)) return false;
+          seenSingletonTypes.add(n.type);
+        }
+        return true;
+      });
+
       const unreadCount = notifications.filter(n => !n.read && !n.dismissed).length;
       
       set({ notifications, unreadCount, loading: false });
@@ -98,17 +109,35 @@ export const useNotificationStore = create<NotificationState>((set, get) => ({
     try {
       const { notifications } = get();
       
-      // Check for duplicate notifications (same type and similar content within last hour)
-      const oneHourAgo = new Date(Date.now() - 60 * 60 * 1000).toISOString();
+      // Budget notification types that should be singleton (max 1 per day, replacing old ones)
+      const singletonTypes: NotificationType[] = [
+        'budget_warning',
+        'budget_exceeded',
+        'budget_on_track',
+      ];
+      const isSingleton = singletonTypes.includes(notification.type);
+
+      // Check for duplicate notifications
+      // Singleton types: 1 per day; others: 1 per hour with same title
+      const deduplicationWindow = isSingleton
+        ? new Date(new Date().setHours(0, 0, 0, 0)).toISOString() // start of today
+        : new Date(Date.now() - 60 * 60 * 1000).toISOString();
+      
       const isDuplicate = notifications.some(
         n => n.type === notification.type && 
-             n.title === notification.title && 
-             n.createdAt > oneHourAgo
+             (isSingleton || n.title === notification.title) && 
+             n.createdAt > deduplicationWindow
       );
       
       if (isDuplicate) {
         console.log('Duplicate notification skipped:', notification.title);
         return;
+      }
+
+      // For singleton types, remove all previous notifications of the same type
+      let filteredNotifications = notifications;
+      if (isSingleton) {
+        filteredNotifications = notifications.filter(n => n.type !== notification.type);
       }
 
       const newNotification: InAppNotification = {
@@ -119,7 +148,7 @@ export const useNotificationStore = create<NotificationState>((set, get) => ({
         dismissed: false,
       };
 
-      const updatedNotifications = [newNotification, ...notifications].slice(0, MAX_NOTIFICATIONS);
+      const updatedNotifications = [newNotification, ...filteredNotifications].slice(0, MAX_NOTIFICATIONS);
       
       await AsyncStorage.setItem(IN_APP_NOTIFICATIONS_KEY, JSON.stringify(updatedNotifications));
       
