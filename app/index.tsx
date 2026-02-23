@@ -6,9 +6,10 @@ import LoadingSplash from "@/components/LoadingSplash";
 import QuickActions from "@/components/QuickActions";
 import RemainingSpendCard from "@/components/RemainingSpendCard";
 import TransactionsSection from "@/components/TransactionsSection";
+import { getTransactionsInCurrentCycle } from "@/lib/budgetCycle";
 import type { QuickAction } from "@/types/type";
 import { router } from "expo-router";
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { AppState, Pressable, RefreshControl, ScrollView, Text, View } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
 import { useHomeStore } from "../store/useHomeStore";
@@ -74,6 +75,12 @@ export default function Index() {
 
   const hasTransactions = transactions && transactions.length > 0;
 
+  // Filter transactions to current budget cycle for sparklines
+  const cycleTransactions = useMemo(
+    () => getTransactionsInCurrentCycle(transactions ?? [], cycleType, cycleDay),
+    [transactions, cycleType, cycleDay]
+  );
+
   // Show loading splash until initial data is loaded
   if (loading) {
     return <LoadingSplash />;
@@ -108,7 +115,7 @@ export default function Index() {
         
         {hasTransactions ? (
           <>
-            <IncomeExpenseRow summary={summary} loading={loading} transactions={transactions} />
+            <IncomeExpenseRow summary={summary} loading={loading} transactions={cycleTransactions} />
             <AccountBalanceCard refreshTrigger={refreshTrigger} />
             <QuickActions actions={quickActions} />
             <TransactionsSection transactions={transactions} categories={categories} currency={summary?.currency ?? "EUR"} loading={loading} />
