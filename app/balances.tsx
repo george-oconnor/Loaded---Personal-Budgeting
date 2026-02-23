@@ -111,8 +111,10 @@ export default function BalancesScreen() {
     try {
       const data = await getAccountBalances(user?.id);
       const sorted = sortBalances(data);
-      setBalances(sorted);
 
+      // Fetch exchange rates BEFORE setting balances so both states
+      // are available on the same render and we avoid the
+      // "Missing rate for X" warning.
       const currencies = sorted.map(b => b.currency);
       const hasMultiple = new Set(currencies).size > 1;
       if (hasMultiple) {
@@ -121,6 +123,8 @@ export default function BalancesScreen() {
         setExchangeRates(rates);
         setRatesStale(stale);
       }
+
+      setBalances(sorted);
     } catch (error) {
       console.error('Error loading balances:', error);
     } finally {
@@ -253,19 +257,21 @@ export default function BalancesScreen() {
   }, 0);
 
   return (
-    <SafeAreaView className="flex-1 bg-gray-50">
+    <SafeAreaView className="flex-1 bg-white">
       {/* Header */}
-      <View className="bg-white px-5 pt-2 pb-4 border-b border-gray-100">
+      <View className="bg-white px-5 pt-2 pb-6">
         <View className="flex-row items-center justify-between">
           <Pressable
             onPress={() => router.back()}
-            className="flex-row items-center gap-1"
+            className="flex-row items-center gap-2"
           >
             <Feather name="chevron-left" size={20} color="#7C3AED" />
             <Text className="text-primary text-base font-semibold">Back</Text>
           </Pressable>
-          <Text className="text-lg font-bold text-gray-900">Accounts</Text>
-          <View style={{ width: 60 }} />
+          <Text className="text-xs text-gray-500">Balances</Text>
+        </View>
+        <View className="mt-1 items-end">
+          <Text className="text-2xl font-bold text-dark-100">Accounts</Text>
         </View>
       </View>
 
