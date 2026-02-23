@@ -6,7 +6,7 @@ import { SafeAreaView } from "react-native-safe-area-context";
 const IMPORT_OPTIONS = [
   {
     id: "csv",
-    name: "AI CSV Import",
+    name: "AI CSV/Excel Import",
     icon: "file-text",
     description: "Import from any bank's CSV export with AI-powered format detection",
     color: "#10B981",
@@ -14,7 +14,7 @@ const IMPORT_OPTIONS = [
   },
   {
     id: "pdf",
-    name: "PDF Statement Import",
+    name: "AI PDF Statement Import",
     icon: "file",
     description: "Import from PDF bank statements using on-device text extraction",
     color: "#8B5CF6",
@@ -101,7 +101,7 @@ export default function ImportScreen() {
             </View>
 
             <View className="flex-1">
-              <View className="flex-row items-center gap-2 mb-2">
+              <View className="flex-row flex-wrap items-center gap-2 mb-2">
                 <Text className="text-lg font-bold text-dark-100">{option.name}</Text>
                 <View className="bg-emerald-200 px-3 py-1 rounded-full">
                   <Text className="text-xs font-bold text-emerald-800">Recommended</Text>
@@ -110,7 +110,7 @@ export default function ImportScreen() {
               <Text className="text-base text-gray-700 leading-5">{option.description}</Text>
             </View>
 
-            <Feather name="arrow-right" size={24} color="#10B981" />
+            <Feather name="arrow-right" size={24} color="#10B981" style={{ alignSelf: 'center' }} />
           </Pressable>
         ))}
 
