@@ -196,14 +196,26 @@ export async function analyzePdfWithAI(
     });
 
     if (!response.ok) {
-      console.warn('AI API call failed for PDF, falling back to heuristic analysis');
+      const errorBody = await response.text().catch(() => 'unable to read body');
+      console.warn(
+        `AI API call failed for PDF (${response.status} ${response.statusText}):`,
+        errorBody
+      );
       return analyzePdfHeuristically(table);
     }
 
     const data = await response.json();
     const aiResponse = data.choices?.[0]?.message?.content || '';
 
-    return parseAIResponse(aiResponse);
+    const result = parseAIResponse(aiResponse);
+
+    // Override sign convention for credit card statements regardless of AI response
+    if (table.isCreditCardFormat && result.mapping) {
+      console.log('PDF AI: overriding sign convention to inverted for credit card statement');
+      result.mapping.amountSignConvention = 'inverted';
+    }
+
+    return result;
   } catch (error) {
     console.error('PDF AI analysis error:', error);
     // Fall back to heuristic analysis
@@ -216,6 +228,9 @@ export async function analyzePdfWithAI(
  * Uses the column types already detected by pdfTableDetector.
  */
 export function analyzePdfHeuristically(table: DetectedTable): CSVAnalysisResult {
+  console.log('PDF heuristic analysis starting:', table.columns.length, 'columns,', table.dataRows.length, 'data rows');
+  console.log('Column details:', table.columns.map(c => ({ i: c.index, name: c.name, type: c.inferredType, sampleFormat: c.sampleFormat })));
+  console.log('Sample row fields:', table.dataRows.slice(0, 3).map(r => r.fields));
   const columns = table.columns;
   const headers = columns.map(c => c.name.toLowerCase().trim());
 
@@ -301,6 +316,12 @@ export function analyzePdfHeuristically(table: DetectedTable): CSVAnalysisResult
 
   const isValidForImport = hasDate && hasAmount && hasDescription;
 
+  console.log('PDF heuristic column mapping:', {
+    dateColumn, amountColumn, debitColumn, creditColumn,
+    descriptionColumn, balanceColumn,
+    hasDate, hasAmount, hasDescription, isValidForImport, missingFields, headers,
+  });
+
   // Determine date format from the date column detection
   let dateFormat = 'DD/MM/YYYY';
   if (dateColumn !== -1 && columns[dateColumn]?.sampleFormat) {
@@ -311,7 +332,11 @@ export function analyzePdfHeuristically(table: DetectedTable): CSVAnalysisResult
     amountColumn !== -1 ? 'single' : 'split';
 
   let amountSignConvention: 'standard' | 'inverted' = 'standard';
-  if (amountColumn !== -1 && columns[amountColumn]?.hasNegatives) {
+  if (table.isCreditCardFormat) {
+    // Credit card statements: positive amounts are expenditures
+    amountSignConvention = 'inverted';
+    console.log('PDF heuristic: credit card detected — using inverted sign convention (positive = expense)');
+  } else if (amountColumn !== -1 && columns[amountColumn]?.hasNegatives) {
     amountSignConvention = 'standard';
   }
 

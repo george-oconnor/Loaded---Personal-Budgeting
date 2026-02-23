@@ -5,6 +5,7 @@ import { Feather } from "@expo/vector-icons";
 import { router } from "expo-router";
 import { useMemo, useState } from "react";
 import { Pressable, Text, View } from "react-native";
+import Sparkline from "./Sparkline";
 
 export default function RemainingSpendCard({
   summary,
@@ -36,7 +37,7 @@ export default function RemainingSpendCard({
   };
   
   // Calculate budget statistics for the selected cycle (with offset support)
-  const { cycleExpenses, remaining, isOverspent, progress, daysRemaining, isCompletedCycle } = useMemo(() => {
+  const { cycleExpenses, remaining, isOverspent, progress, daysRemaining, isCompletedCycle, sparkData } = useMemo(() => {
     const cycleStart = getCycleStartDateWithOffset(cycleType, cycleDay, cycleOffset);
     const cycleEnd = getCycleEndDateForCycleStart(cycleType, cycleDay, cycleStart);
     
@@ -65,6 +66,26 @@ export default function RemainingSpendCard({
       days = getDaysRemainingInCycle(cycleType, cycleDay);
     }
     
+    // Build daily cumulative spending data for sparkline
+    const dailyMap = new Map<string, number>();
+    const expenseTxns = cycleTransactions.filter(t => t.kind === "expense" && !shouldExcludeFromAnalytics(t));
+    for (const t of expenseTxns) {
+      const key = t.date.slice(0, 10);
+      dailyMap.set(key, (dailyMap.get(key) ?? 0) + Math.abs(t.amount));
+    }
+
+    // Fill in every day from cycle start to today (or cycle end)
+    const endDate = isCompleted ? cycleEnd : now;
+    const sparkData: number[] = [];
+    let cumulative = 0;
+    const cursor = new Date(cycleStart);
+    while (cursor <= endDate) {
+      const key = `${cursor.getFullYear()}-${String(cursor.getMonth() + 1).padStart(2, "0")}-${String(cursor.getDate()).padStart(2, "0")}`;
+      cumulative += dailyMap.get(key) ?? 0;
+      sparkData.push(cumulative);
+      cursor.setDate(cursor.getDate() + 1);
+    }
+
     return {
       cycleExpenses: expenses,
       remaining: rem,
@@ -72,6 +93,7 @@ export default function RemainingSpendCard({
       progress: prog,
       daysRemaining: days,
       isCompletedCycle: isCompleted,
+      sparkData,
     };
   }, [transactions, budget, cycleType, cycleDay, cycleOffset]);
   
@@ -116,9 +138,24 @@ export default function RemainingSpendCard({
           <Feather name="edit-2" size={18} color="white" />
         </Pressable>
       </View>
-      <Text className="text-white text-4xl font-bold mt-1">
-        {loading ? "…" : `${isOverspent ? "-" : ""}${formatCurrency(displayRemaining / 100, currency)}`}
-      </Text>
+      <View className="flex-row items-end justify-between">
+        <Text className="text-white text-4xl font-bold mt-1 flex-shrink">
+          {loading ? "…" : `${isOverspent ? "-" : ""}${formatCurrency(displayRemaining / 100, currency)}`}
+        </Text>
+        {sparkData.length >= 2 && (
+          <View className="opacity-60 ml-2">
+            <Sparkline
+              data={sparkData}
+              width={90}
+              height={44}
+              strokeColor="rgba(255,255,255,0.7)"
+              fillColorStart="rgba(255,255,255,0.25)"
+              fillColorEnd="rgba(255,255,255,0)"
+              strokeWidth={1.5}
+            />
+          </View>
+        )}
+      </View>
       <View className="mt-4">
         <View className="h-2 w-full rounded-full bg-white/20 overflow-hidden">
           <View

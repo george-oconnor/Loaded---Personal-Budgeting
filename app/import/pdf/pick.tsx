@@ -57,6 +57,7 @@ export default function PdfPickScreen() {
   const [fileName, setFileName] = useState<string | null>(null);
   const [fileUri, setFileUri] = useState<string | null>(null);
   const [hasAutoAnalyzed, setHasAutoAnalyzed] = useState(false);
+  const analysisAbortRef = React.useRef(0); // incremented to cancel in-flight analyses
   const [pdfInfo, setPdfInfo] = useState<{
     pageCount: number;
     type: "text" | "scanned";
@@ -65,6 +66,7 @@ export default function PdfPickScreen() {
   const [analysisResult, setAnalysisResult] = useState<PdfAnalysisResult | null>(null);
   const [columnMapping, setColumnMapping] = useState<ColumnMapping | null>(null);
   const [extractedTextPreview, setExtractedTextPreview] = useState<string>("");
+  const detectedBalanceRef = React.useRef<string>(""); // Statement balance extracted from PDF header
 
   // Handle shared PDF file URI from deep link / share sheet
   useEffect(() => {
@@ -82,6 +84,11 @@ export default function PdfPickScreen() {
 
   // ─── Pick PDF ─────────────────────────────────────────────────────────
   const handlePickFile = async () => {
+    // Cancel any in-progress analysis
+    analysisAbortRef.current++;
+    setLoading(false);
+    setAnalysisStatus("idle");
+
     try {
       const result = await DocumentPicker.getDocumentAsync({
         type: ["application/pdf"],
@@ -118,6 +125,7 @@ export default function PdfPickScreen() {
 
   // ─── Full Analysis Pipeline ───────────────────────────────────────────
   const analyzeFile = async (uri: string) => {
+    const thisRun = ++analysisAbortRef.current;
     setLoading(true);
     setAnalysisStatus("reading");
     setAnalysisResult(null);
@@ -127,6 +135,7 @@ export default function PdfPickScreen() {
       // Step 1: Detect PDF type (text layer vs scanned)
       setAnalysisStatus("extracting");
       const pdfType = await detectPdfType(uri);
+      if (thisRun !== analysisAbortRef.current) return; // Cancelled
       setPdfInfo({
         pageCount: pdfType.pageCount,
         type: pdfType.type,
@@ -134,6 +143,20 @@ export default function PdfPickScreen() {
 
       // Step 2: Extract text on-device (Apple PDFKit + Vision OCR)
       const extraction = await extractTextFromPdf(uri);
+      if (thisRun !== analysisAbortRef.current) return; // Cancelled
+      console.log('PDF extraction result:', {
+        success: extraction.success,
+        pageCount: extraction.pageCount,
+        method: extraction.extractionMethod,
+        textLength: extraction.fullText?.length ?? 0,
+        first200: extraction.fullText?.slice(0, 200),
+      });
+
+      // Dump first 80 lines to debug table detection
+      const debugLines = extraction.fullText?.split('\n').slice(0, 80) ?? [];
+      debugLines.forEach((line: string, i: number) => {
+        if (line.trim()) console.log(`PDF L${i}: ${line.slice(0, 120)}`);
+      });
 
       if (!extraction.fullText || extraction.fullText.trim().length < 20) {
         setAnalysisStatus("error");
@@ -148,10 +171,53 @@ export default function PdfPickScreen() {
       // Show a preview of extracted text
       setExtractedTextPreview(extraction.fullText.slice(0, 300));
 
+      // Extract statement balance from PDF header text (e.g. "Statement Balance €1,669.03")
+      const balancePatterns = [
+        /statement\s+balance\s+[€$£]?\s*([\d,]+\.\d{2})/i,
+        /closing\s+balance\s+[€$£]?\s*([\d,]+\.\d{2})/i,
+        /new\s+balance\s+[€$£]?\s*([\d,]+\.\d{2})/i,
+        /balance\s+due\s+[€$£]?\s*([\d,]+\.\d{2})/i,
+        /amount\s+due\s+[€$£]?\s*([\d,]+\.\d{2})/i,
+      ];
+      const headerText = extraction.fullText.slice(0, 2000); // Balance is always in header area
+      let detectedBal = "";
+      for (const pattern of balancePatterns) {
+        const match = headerText.match(pattern);
+        if (match) {
+          const parsed = parseFloat(match[1].replace(/,/g, ''));
+          if (!isNaN(parsed)) {
+            detectedBal = parsed.toFixed(2);
+            console.log('PDF detected statement balance:', detectedBal, 'from pattern:', pattern.source);
+            break;
+          }
+        }
+      }
+      detectedBalanceRef.current = detectedBal;
+
       // Step 3: Detect transaction tables in extracted text
       setAnalysisStatus("detecting");
       const tables = detectTables(extraction.fullText);
       setTableResult(tables);
+
+      // If credit card, negate the balance (it's money owed)
+      if (tables.mergedTable?.isCreditCardFormat && detectedBal && !detectedBal.startsWith('-')) {
+        detectedBalanceRef.current = `-${detectedBal}`;
+        console.log('PDF: negated balance for credit card:', detectedBalanceRef.current);
+      }
+      console.log('PDF table detection:', {
+        success: tables.success,
+        tableCount: tables.tables.length,
+        rawLineCount: tables.rawLineCount,
+        error: tables.error,
+        mergedTable: tables.mergedTable ? {
+          columns: tables.mergedTable.columns.map(c => ({ index: c.index, name: c.name, type: c.inferredType })),
+          dataRowCount: tables.mergedTable.dataRows.length,
+          totalDataRows: tables.mergedTable.totalDataRows,
+          confidence: tables.mergedTable.confidence,
+          warnings: tables.mergedTable.warnings,
+          sampleRows: tables.mergedTable.dataRows.slice(0, 3).map(r => r.fields),
+        } : null,
+      });
 
       if (!tables.success || !tables.mergedTable) {
         setAnalysisStatus("error");
@@ -167,6 +233,7 @@ export default function PdfPickScreen() {
       // Step 4: Anonymize structure + analyze with AI (or heuristics)
       setAnalysisStatus("anonymizing");
       await new Promise((resolve) => setTimeout(resolve, 200)); // Brief UI update
+      if (thisRun !== analysisAbortRef.current) return; // Cancelled
 
       setAnalysisStatus("analyzing");
       const extractionMethod =
@@ -175,7 +242,16 @@ export default function PdfPickScreen() {
         tables.mergedTable,
         extractionMethod as "pdf_text_layer" | "pdf_ocr"
       );
+      if (thisRun !== analysisAbortRef.current) return; // Cancelled
       setAnalysisResult(analysis);
+      console.log('PDF analysis result:', {
+        isValidForImport: analysis.isValidForImport,
+        confidence: analysis.confidence,
+        mapping: analysis.mapping,
+        missingFields: analysis.missingFields,
+        warnings: analysis.warnings,
+        suggestion: analysis.suggestion,
+      });
 
       if (!analysis.isValidForImport || !analysis.mapping) {
         setAnalysisStatus("error");
@@ -217,6 +293,13 @@ export default function PdfPickScreen() {
         tableResult.mergedTable,
         columnMapping
       );
+      console.log('PDF parse result:', {
+        transactionCount: transactions.length,
+        totalRows: parseResult.totalRows,
+        skipped: parseResult.skipped,
+        skippedDetails: parseResult.skippedDetails.slice(0, 10),
+        sampleTransactions: transactions.slice(0, 3).map(t => ({ title: t.title, amount: t.amount, kind: t.kind, date: t.date })),
+      });
 
       if (transactions.length === 0) {
         Alert.alert(
@@ -227,19 +310,21 @@ export default function PdfPickScreen() {
         return;
       }
 
-      // Extract latest balance
-      const sortedByDate = [...parseResult.transactions].sort(
-        (a, b) =>
-          new Date(b.date).getTime() - new Date(a.date).getTime()
-      );
-      const mostRecentBalance = sortedByDate[0]?.balance;
-      let latestBalance = "";
-      if (mostRecentBalance) {
-        const parsed = parseFloat(
-          mostRecentBalance.replace(/[^0-9.-]/g, "")
+      // Extract latest balance — prefer statement-level balance over per-row balance
+      let latestBalance = detectedBalanceRef.current;
+      if (!latestBalance) {
+        const sortedByDate = [...parseResult.transactions].sort(
+          (a, b) =>
+            new Date(b.date).getTime() - new Date(a.date).getTime()
         );
-        if (!isNaN(parsed)) {
-          latestBalance = parsed.toFixed(2);
+        const mostRecentBalance = sortedByDate[0]?.balance;
+        if (mostRecentBalance) {
+          const parsed = parseFloat(
+            mostRecentBalance.replace(/[^0-9.-]/g, "")
+          );
+          if (!isNaN(parsed)) {
+            latestBalance = parsed.toFixed(2);
+          }
         }
       }
 
@@ -251,6 +336,8 @@ export default function PdfPickScreen() {
         skippedRows: parseResult.skipped,
         skippedDetails: parseResult.skippedDetails,
       };
+
+      console.log('PDF pick: navigating to select-account, detectedBalance =', latestBalance);
 
       router.push({
         pathname: "/import/pdf/select-account",

@@ -249,13 +249,22 @@ export default function PdfPreviewScreen() {
       // Create/update account if we have account info
       if (selectedAccountKey && selectedAccountName) {
         try {
+          const accountCurrency = selectedAccountCurrency || "EUR";
+          const accountType = selectedAccountType || "Current";
+
           if (isNewAccount) {
             const balanceInCents = initialBalance
               ? Math.round(parseFloat(initialBalance) * 100)
               : 0;
             const finalBalance = isNaN(balanceInCents) ? 0 : balanceInCents;
-            const accountCurrency = selectedAccountCurrency || "EUR";
-            const accountType = selectedAccountType || "Current";
+
+            console.log('PDF import: creating NEW account', {
+              name: selectedAccountName,
+              type: accountType,
+              key: selectedAccountKey,
+              balance: finalBalance,
+              initialBalanceParam: initialBalance,
+            });
 
             await updateAccountBalance(selectedAccountName, finalBalance, accountCurrency, {
               accountKey: selectedAccountKey,
@@ -277,6 +286,46 @@ export default function PdfPreviewScreen() {
             );
 
             console.log(`Created new account: ${selectedAccountName} with balance: ${finalBalance}`);
+          } else {
+            // Existing account — still update the account type and balance
+            const balanceInCents = initialBalance
+              ? Math.round(parseFloat(initialBalance) * 100)
+              : undefined;
+
+            console.log('PDF import: updating EXISTING account', {
+              name: selectedAccountName,
+              type: accountType,
+              key: selectedAccountKey,
+              balance: balanceInCents,
+              initialBalanceParam: initialBalance,
+            });
+
+            // Always update account type to ensure it reflects user's choice
+            await updateAccountBalance(
+              selectedAccountName,
+              balanceInCents ?? 0,
+              accountCurrency,
+              {
+                accountKey: selectedAccountKey,
+                accountType: accountType,
+                provider: "pdf",
+                userId: user.id,
+              }
+            );
+
+            await upsertBalanceRemote(
+              user.id,
+              {
+                accountKey: selectedAccountKey,
+                accountName: selectedAccountName,
+                accountType: accountType,
+                provider: "pdf",
+                currency: accountCurrency,
+              },
+              balanceInCents ?? 0
+            );
+
+            console.log(`Updated existing account: ${selectedAccountName} type=${accountType}`);
           }
         } catch (balanceErr) {
           console.error("Failed to create/update account:", balanceErr);

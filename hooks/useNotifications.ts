@@ -13,6 +13,7 @@ import {
   scheduleDailyBudgetCheck,
   scheduleImportReminder,
   scheduleWeeklyImportReminder,
+  shouldShowImportBanner,
 } from '@/lib/notifications';
 import { useHomeStore } from '@/store/useHomeStore';
 import {
@@ -197,13 +198,15 @@ export function useNotifications() {
     try {
       const staleAccounts = await getStaleAccounts(STALE_IMPORT_THRESHOLD_DAYS, user.id);
 
-      // Only send push notifications for stale imports, no in-app notifications
-      for (const account of staleAccounts) {
-        const days = daysSinceImport(account.lastImportDate);
-        
-        // Send push notification for stale accounts
-        const enabled = await areNotificationsEnabled(user.id);
-        if (enabled) {
+      // Only send push notifications for stale imports that haven't been dismissed
+      const enabled = await areNotificationsEnabled(user.id);
+      if (enabled) {
+        for (const account of staleAccounts) {
+          // Skip accounts whose banner has been dismissed for the current stale state
+          const shouldNotify = await shouldShowImportBanner(account.accountKey, account.lastImportDate, user.id);
+          if (!shouldNotify) continue;
+
+          const days = daysSinceImport(account.lastImportDate);
           await scheduleImportReminder(account.accountName, account.provider, days);
         }
       }

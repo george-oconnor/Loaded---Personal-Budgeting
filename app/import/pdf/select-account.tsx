@@ -107,7 +107,14 @@ export default function PdfSelectAccountScreen() {
       accountName = selected.name;
       accountType = selected.type;
       accountCurrency = selected.currency;
+      // Pass detected balance for existing accounts too
+      initialBalance = detectedBalance || "";
     }
+
+    console.log('PDF select-account: navigating to preview', {
+      accountKey, accountName, accountType, accountCurrency,
+      initialBalance, isNewAccount,
+    });
 
     router.push({
       pathname: "/import/pdf/preview",

@@ -10,6 +10,23 @@ interface AccountBalanceCardProps {
   refreshTrigger?: number;
 }
 
+type CategoryKey = 'current' | 'savings' | 'loan' | 'credit-card';
+
+interface CategoryInfo {
+  key: CategoryKey;
+  label: string;
+  icon: string;
+  color: string;
+  bgColor: string;
+}
+
+const CATEGORIES: CategoryInfo[] = [
+  { key: 'current', label: 'Current', icon: 'credit-card', color: '#6366F1', bgColor: '#EEF2FF' },
+  { key: 'savings', label: 'Savings', icon: 'trending-up', color: '#10B981', bgColor: '#ECFDF5' },
+  { key: 'credit-card', label: 'Credit Cards', icon: 'credit-card', color: '#EF4444', bgColor: '#FEF2F2' },
+  { key: 'loan', label: 'Loans', icon: 'home', color: '#F59E0B', bgColor: '#FFFBEB' },
+];
+
 export default function AccountBalanceCard({ refreshTrigger }: AccountBalanceCardProps) {
   const [balances, setBalances] = useState<AccountBalance[]>([]);
   const [loading, setLoading] = useState(true);
@@ -22,12 +39,11 @@ export default function AccountBalanceCard({ refreshTrigger }: AccountBalanceCar
   const loadBalances = async () => {
     try {
       setLoading(true);
-      // Sync from Appwrite first if user is logged in
       if (user?.id) {
         await syncBalancesFromAppwrite(user.id);
       }
       const data = await getAccountBalances(user?.id);
-      setBalances(data);
+      setBalances([...data].sort((a, b) => a.accountName.localeCompare(b.accountName)));
     } catch (error) {
       console.error('Error loading balances:', error);
     } finally {
@@ -35,41 +51,35 @@ export default function AccountBalanceCard({ refreshTrigger }: AccountBalanceCar
     }
   };
 
-  const categorizeAccount = (account: AccountBalance): 'savings' | 'current' | 'loan' => {
+  const categorizeAccount = (account: AccountBalance): CategoryKey => {
     const name = account.accountName.toLowerCase();
     const type = account.accountType?.toLowerCase();
-    
-    // Loan accounts
+    if (type === 'credit card' || type === 'credit-card' || type === 'creditcard' ||
+        name.includes('credit card') || name.includes('creditcard')) return 'credit-card';
     if (name.includes('loan') || name.includes('mortgage') || type === 'loan') return 'loan';
-    // Vault counts as savings
     if (name.includes('vault') || type === 'vault') return 'savings';
-    // Pocket counts as current
     if (name.includes('pocket') || type === 'pocket') return 'current';
-    // Use accountType if available
     if (type === 'savings') return 'savings';
-    // Default to current
     return 'current';
   };
 
-  const savingsAccounts = balances.filter(acc => categorizeAccount(acc) === 'savings');
-  const currentAccounts = balances.filter(acc => categorizeAccount(acc) === 'current');
-  const loanAccounts = balances.filter(acc => categorizeAccount(acc) === 'loan');
+  const grouped = balances.reduce<Record<CategoryKey, AccountBalance[]>>((acc, bal) => {
+    const cat = categorizeAccount(bal);
+    acc[cat].push(bal);
+    return acc;
+  }, { current: [], savings: [], loan: [], 'credit-card': [] });
 
-  const savingsTotal = savingsAccounts.reduce((sum, account) => sum + account.balance, 0);
-  const currentTotal = currentAccounts.reduce((sum, account) => sum + account.balance, 0);
-  const loanTotal = loanAccounts.reduce((sum, account) => sum + account.balance, 0);
-  const totalBalance = savingsTotal + currentTotal + loanTotal;
-
+  const totalBalance = balances.reduce((sum, a) => sum + a.balance, 0);
   const mainCurrency = balances.length > 0 ? balances[0].currency : "EUR";
 
-  const getAccountIcon = (accountName: string): string => {
-    const name = accountName.toLowerCase();
-    if (name.includes('loan') || name.includes('mortgage')) return 'home';
-    if (name.includes('vault')) return 'lock';
-    if (name.includes('pocket')) return 'inbox';
-    if (name.includes('savings')) return 'trending-up';
-    return 'credit-card';
-  };
+  // Only show categories that have accounts
+  const activeCategories = CATEGORIES.filter(c => grouped[c.key].length > 0);
+
+  // For the balance bar proportions
+  const positiveTotal = activeCategories.reduce((sum, c) => {
+    const catTotal = grouped[c.key].reduce((s, a) => s + a.balance, 0);
+    return sum + Math.abs(catTotal);
+  }, 0);
 
   if (loading) {
     return (
@@ -80,7 +90,7 @@ export default function AccountBalanceCard({ refreshTrigger }: AccountBalanceCar
   }
 
   if (balances.length === 0) {
-    return null; // Don't show anything if no balances
+    return null;
   }
 
   return (
@@ -88,96 +98,71 @@ export default function AccountBalanceCard({ refreshTrigger }: AccountBalanceCar
       onPress={() => router.push("/balances")}
       className="mt-5 active:opacity-80"
     >
-      <View className="rounded-3xl bg-gradient-to-br from-indigo-500 to-purple-600 px-5 py-6 shadow-md" style={{ backgroundColor: '#667eea' }}>
-        <View className="flex-row items-center justify-between mb-3">
-          <Text className="text-white/80 text-sm font-medium">Total Balance</Text>
-          <Feather name="chevron-right" size={20} color="white" opacity={0.6} />
+      <View className="rounded-3xl bg-white px-5 py-5 shadow-sm border border-gray-100">
+        {/* Header */}
+        <View className="flex-row items-center justify-between mb-1">
+          <Text className="text-gray-500 text-sm font-medium">Total Balance</Text>
+          <View className="flex-row items-center">
+            <Text className="text-gray-400 text-xs mr-1">Details</Text>
+            <Feather name="chevron-right" size={16} color="#9CA3AF" />
+          </View>
         </View>
-        
-        <Text className="text-white text-3xl font-bold mb-4">
+
+        {/* Total */}
+        <Text className={`text-2xl font-bold mb-4 ${totalBalance < 0 ? 'text-red-500' : totalBalance > 0 ? 'text-green-600' : 'text-gray-900'}`}>
           {formatCurrency(totalBalance / 100, mainCurrency)}
         </Text>
 
-        {/* Current Accounts Section */}
-        {currentAccounts.length > 0 && (
-          <View className="mb-3">
-            <View className="flex-row items-center justify-between mb-2">
-              <Text className="text-white/70 text-xs font-semibold uppercase tracking-wide">Current</Text>
-              <Text className={`text-sm font-bold ${currentTotal < 0 ? 'text-red-300' : 'text-white/90'}`}>
-                {formatCurrency(currentTotal / 100, mainCurrency)}
-              </Text>
-            </View>
-            {currentAccounts.map((account, index) => (
-              <View key={`current-${index}`} className="flex-row items-center justify-between py-2 border-t border-white/10">
-                <View className="flex-row items-center flex-1">
-                  <View className="w-8 h-8 rounded-full bg-white/20 items-center justify-center mr-3">
-                    <Feather name={getAccountIcon(account.accountName) as any} size={16} color="white" />
-                  </View>
-                  <Text className="text-white/90 text-sm flex-1" numberOfLines={1}>
-                    {account.accountName}
-                  </Text>
-                </View>
-                <Text className={`font-semibold text-sm ml-2 ${account.balance < 0 ? 'text-red-300' : 'text-white'}`}>
-                  {formatCurrency(account.balance / 100, account.currency)}
-                </Text>
-              </View>
-            ))}
+        {/* Proportion bar */}
+        {activeCategories.length > 1 && positiveTotal > 0 && (
+          <View className="flex-row h-2 rounded-full overflow-hidden mb-4">
+            {activeCategories.map((cat, i) => {
+              const catTotal = Math.abs(grouped[cat.key].reduce((s, a) => s + a.balance, 0));
+              const pct = (catTotal / positiveTotal) * 100;
+              if (pct < 1) return null;
+              return (
+                <View
+                  key={cat.key}
+                  style={{
+                    width: `${pct}%` as any,
+                    backgroundColor: cat.color,
+                    marginLeft: i > 0 ? 2 : 0,
+                    borderRadius: 4,
+                  }}
+                />
+              );
+            })}
           </View>
         )}
 
-        {/* Savings Accounts Section */}
-        {savingsAccounts.length > 0 && (
-          <View>
-            <View className="flex-row items-center justify-between mb-2">
-              <Text className="text-white/70 text-xs font-semibold uppercase tracking-wide">Savings</Text>
-              <Text className={`text-sm font-bold ${savingsTotal < 0 ? 'text-red-300' : 'text-white/90'}`}>
-                {formatCurrency(savingsTotal / 100, mainCurrency)}
-              </Text>
-            </View>
-            {savingsAccounts.map((account, index) => (
-              <View key={`savings-${index}`} className="flex-row items-center justify-between py-2 border-t border-white/10">
-                <View className="flex-row items-center flex-1">
-                  <View className="w-8 h-8 rounded-full bg-white/20 items-center justify-center mr-3">
-                    <Feather name={getAccountIcon(account.accountName) as any} size={16} color="white" />
-                  </View>
-                  <Text className="text-white/90 text-sm flex-1" numberOfLines={1}>
-                    {account.accountName}
+        {/* Category rows */}
+        <View className="gap-2">
+          {activeCategories.map((cat) => {
+            const accounts = grouped[cat.key];
+            const catTotal = accounts.reduce((s, a) => s + a.balance, 0);
+            return (
+              <View key={cat.key} className="flex-row items-center py-2">
+                <View
+                  className="w-9 h-9 rounded-xl items-center justify-center mr-3"
+                  style={{ backgroundColor: cat.bgColor }}
+                >
+                  <Feather name={cat.icon as any} size={16} color={cat.color} />
+                </View>
+                <View className="flex-1">
+                  <Text className="text-gray-900 text-sm font-semibold">{cat.label}</Text>
+                  <Text className="text-gray-400 text-xs">
+                    {accounts.length} account{accounts.length !== 1 ? 's' : ''}
                   </Text>
                 </View>
-                <Text className={`font-semibold text-sm ml-2 ${account.balance < 0 ? 'text-red-300' : 'text-white'}`}>
-                  {formatCurrency(account.balance / 100, account.currency)}
+                <Text
+                  className={`font-bold text-sm ${catTotal < 0 ? 'text-red-500' : catTotal > 0 ? 'text-green-600' : 'text-gray-900'}`}
+                >
+                  {formatCurrency(catTotal / 100, mainCurrency)}
                 </Text>
               </View>
-            ))}
-          </View>
-        )}
-
-        {/* Loan Accounts Section */}
-        {loanAccounts.length > 0 && (
-          <View>
-            <View className="flex-row items-center justify-between mb-2">
-              <Text className="text-white/70 text-xs font-semibold uppercase tracking-wide">Loans</Text>
-              <Text className={`text-sm font-bold ${loanTotal < 0 ? 'text-red-300' : 'text-white/90'}`}>
-                {formatCurrency(loanTotal / 100, mainCurrency)}
-              </Text>
-            </View>
-            {loanAccounts.map((account, index) => (
-              <View key={`loan-${index}`} className="flex-row items-center justify-between py-2 border-t border-white/10">
-                <View className="flex-row items-center flex-1">
-                  <View className="w-8 h-8 rounded-full bg-white/20 items-center justify-center mr-3">
-                    <Feather name={getAccountIcon(account.accountName) as any} size={16} color="white" />
-                  </View>
-                  <Text className="text-white/90 text-sm flex-1" numberOfLines={1}>
-                    {account.accountName}
-                  </Text>
-                </View>
-                <Text className={`font-semibold text-sm ml-2 ${account.balance < 0 ? 'text-red-300' : 'text-white'}`}>
-                  {formatCurrency(account.balance / 100, account.currency)}
-                </Text>
-              </View>
-            ))}
-          </View>
-        )}
+            );
+          })}
+        </View>
       </View>
     </Pressable>
   );

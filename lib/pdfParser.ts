@@ -45,6 +45,27 @@ function parseDate(dateStr: string, format: string): Date | null {
     if (!isNaN(d.getTime())) return d;
   }
 
+  // DD Mon (no year) — common in credit card statements
+  // Infer year: use current year; if the date is in the future, use previous year
+  const shortMonthMatch = str.match(/^(\d{1,2})\s+(\S+)$/);
+  if (shortMonthMatch) {
+    const day = parseInt(shortMonthMatch[1], 10);
+    const monthToken = shortMonthMatch[2];
+    let monthNum = parseMonthName(monthToken);
+    if (monthNum === -1) monthNum = parseOcrMonth(monthToken);
+    if (monthNum !== -1 && day >= 1 && day <= 31) {
+      const now = new Date();
+      let year = now.getFullYear();
+      const candidate = new Date(year, monthNum, day);
+      // If the date is more than 2 months in the future, assume previous year
+      if (candidate.getTime() > now.getTime() + 60 * 24 * 60 * 60 * 1000) {
+        year--;
+      }
+      const d = new Date(year, monthNum, day);
+      if (!isNaN(d.getTime())) return d;
+    }
+  }
+
   // DD/MM/YYYY or DD-MM-YYYY or DD.MM.YYYY
   const euroMatch = str.match(/^(\d{1,2})[\/\-.](\d{1,2})[\/\-.](\d{4})$/);
   if (euroMatch) {
@@ -73,14 +94,20 @@ function parseDate(dateStr: string, format: string): Date | null {
     if (!isNaN(d.getTime())) return d;
   }
 
-  // DD Mon YYYY or DD Month YYYY
-  const monthNameMatch = str.match(/^(\d{1,2})\s+(\w+)\s+(\d{4})$/);
+  // DD Mon YYYY or DD Month YYYY (also handles OCR-garbled months)
+  const monthNameMatch = str.match(/^(\d{1,2})\s+(\S+)\s+(\d{2,4})$/);
   if (monthNameMatch) {
     const day = parseInt(monthNameMatch[1], 10);
-    const monthName = monthNameMatch[2];
-    const year = parseInt(monthNameMatch[3], 10);
-    const monthNum = parseMonthName(monthName);
-    if (monthNum !== -1) {
+    const monthToken = monthNameMatch[2];
+    let year = parseInt(monthNameMatch[3], 10);
+    if (year < 100) year = year < 50 ? 2000 + year : 1900 + year;
+
+    // Try exact match first, then OCR-fuzzy match
+    let monthNum = parseMonthName(monthToken);
+    if (monthNum === -1) {
+      monthNum = parseOcrMonth(monthToken);
+    }
+    if (monthNum !== -1 && day >= 1 && day <= 31) {
       const d = new Date(year, monthNum, day);
       if (!isNaN(d.getTime())) return d;
     }
@@ -122,6 +149,76 @@ function parseMonthName(name: string): number {
     dec: 11, december: 11,
   };
   return months[name.toLowerCase()] ?? -1;
+}
+
+/**
+ * Fuzzy month name parser for OCR-garbled text.
+ * OCR commonly confuses letters with visually similar digits/characters:
+ *   e.g. "Feb" → "F3b", "251", "Fcb", "Feh"
+ *        "Jan" → "J4n", "1an", "Jon"
+ * Strategy: try edit-distance and common OCR substitution patterns.
+ */
+function parseOcrMonth(token: string): number {
+  if (!token || token.length < 2) return -1;
+
+  const canonical = [
+    'jan', 'feb', 'mar', 'apr', 'may', 'jun',
+    'jul', 'aug', 'sep', 'oct', 'nov', 'dec',
+  ];
+
+  // Common OCR character substitutions
+  const ocrNormalize = (s: string): string =>
+    s.toLowerCase()
+      .replace(/0/g, 'o')
+      .replace(/1/g, 'l')
+      .replace(/3/g, 'e')  // 3 ↔ e
+      .replace(/4/g, 'a')  // 4 ↔ a
+      .replace(/5/g, 's')  // 5 ↔ s
+      .replace(/6/g, 'b')  // 6 ↔ b
+      .replace(/7/g, 't')  // 7 ↔ t
+      .replace(/8/g, 'b')  // 8 ↔ b
+      .replace(/9/g, 'g'); // 9 ↔ g
+
+  const normalized = ocrNormalize(token);
+
+  // First try: does the normalized token start with a 3-letter month?
+  for (let i = 0; i < canonical.length; i++) {
+    if (normalized.startsWith(canonical[i])) return i;
+  }
+
+  // Second try: edit distance ≤ 1 against first 3 chars
+  const first3 = normalized.slice(0, 3);
+  for (let i = 0; i < canonical.length; i++) {
+    if (editDistance(first3, canonical[i]) <= 1) return i;
+  }
+
+  // Third try: pure digits → could be month number from OCR
+  const num = parseInt(token, 10);
+  if (num >= 1 && num <= 12) return num - 1;
+
+  return -1;
+}
+
+function editDistance(a: string, b: string): number {
+  if (a.length === 0) return b.length;
+  if (b.length === 0) return a.length;
+  const matrix: number[][] = [];
+  for (let i = 0; i <= a.length; i++) {
+    matrix[i] = [i];
+    for (let j = 1; j <= b.length; j++) {
+      if (i === 0) {
+        matrix[i][j] = j;
+      } else {
+        const cost = a[i - 1] === b[j - 1] ? 0 : 1;
+        matrix[i][j] = Math.min(
+          matrix[i - 1][j] + 1,
+          matrix[i][j - 1] + 1,
+          matrix[i - 1][j - 1] + cost,
+        );
+      }
+    }
+  }
+  return matrix[a.length][b.length];
 }
 
 // ─── Amount Parsing ───────────────────────────────────────────────────────
@@ -203,6 +300,10 @@ export function parsePdfTable(
   let skipped = 0;
   const skippedDetails: SkippedRow[] = [];
 
+  console.log('PDF parser: sign convention =', mapping.amountSignConvention,
+    '| isCreditCardFormat =', table.isCreditCardFormat,
+    '| rows =', table.dataRows.length);
+
   for (const row of table.dataRows) {
     const fields = row.fields;
 
@@ -213,7 +314,8 @@ export function parsePdfTable(
 
       if (!parsedDate) {
         skipped++;
-        skippedDetails.push({ line: row.lineNumber, reason: `Invalid date: "${dateStr}"` });
+        skippedDetails.push({ line: row.lineNumber, reason: `Invalid date: "${dateStr}" (raw: "${row.rawText.slice(0, 80)}")` });
+        console.log('PDF row skipped (bad date):', { line: row.lineNumber, dateStr, fields: fields.slice(0, 5) });
         continue;
       }
 

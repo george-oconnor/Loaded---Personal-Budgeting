@@ -23,7 +23,12 @@ export type { PdfExtractionResult, PdfTypeResult };
  * @param fileUri - Local file URI of the PDF
  * @returns Type information about the PDF
  */
+export const isPdfExtractorAvailable = PdfTextExtractor !== null;
+
 export async function detectPdfType(fileUri: string): Promise<PdfTypeResult> {
+  if (!PdfTextExtractor) {
+    throw new Error('PDF extraction requires a development build (not Expo Go).');
+  }
   try {
     return await PdfTextExtractor.detectPdfType(fileUri);
   } catch (error) {
@@ -46,6 +51,9 @@ export async function detectPdfType(fileUri: string): Promise<PdfTypeResult> {
  * @returns Extraction result with full text and per-page breakdown
  */
 export async function extractTextFromPdf(fileUri: string): Promise<PdfExtractionResult> {
+  if (!PdfTextExtractor) {
+    throw new Error('PDF extraction requires a development build (not Expo Go).');
+  }
   try {
     const result = await PdfTextExtractor.extractText(fileUri);
 

@@ -38,6 +38,7 @@ export interface DetectedTable {
   totalDataRows: number;
   confidence: 'high' | 'medium' | 'low';
   warnings: string[];
+  isCreditCardFormat?: boolean;  // Hint: amounts are expenditures (positive = expense)
 }
 
 export interface TableDetectionResult {
@@ -66,6 +67,15 @@ const DATE_PATTERNS = [
   /^\d{1,2}\s+\w{3,9}\s+\d{2,4}$/,          // DD Mon YYYY or DD Month YYYY
   /^\w{3,9}\s+\d{1,2},?\s+\d{4}$/,          // Mon DD, YYYY
   /^\d{1,2}\.\d{1,2}\.\d{2,4}$/,            // DD.MM.YYYY (European)
+];
+
+// OCR-tolerant date patterns — OCR can mangle letters into digits/symbols
+// e.g. "18 Feb 25" → "18 251 25" or "18 Fc6 25" or "18 F3b 25"
+const OCR_DATE_PATTERNS = [
+  ...DATE_PATTERNS,
+  /^\d{1,2}\s+\S{2,9}\s+\d{2,4}$/,          // DD <anything> YY(YY) — OCR-garbled month
+  /^\d{1,2}\s+\S{2,9}\s*$/,                  // DD <anything> (year might be on next token)
+  /^\d{1,2}\s+\w{1,3}\d{0,3}\w{0,3}\s+\d{2,4}$/, // DD <garbled-month> YY(YY)
 ];
 
 // Amount patterns
@@ -108,13 +118,40 @@ export function detectTables(extractedText: string): TableDetectionResult {
 
   const warnings: string[] = [];
 
+  console.log('PDF table detector: processing', lines.length, 'lines');
+
+  // Strategy A: Try simple line-format detection first (e.g. "DD Mon Description Amount")
+  // This handles credit card statements where each transaction is a single line
+  const lineFormatResult = detectSimpleLineFormat(lines);
+  if (lineFormatResult && lineFormatResult.dataRows.length >= 3) {
+    console.log('PDF table detector: simple line format detected with', lineFormatResult.dataRows.length, 'rows');
+    return {
+      success: true,
+      tables: [lineFormatResult],
+      mergedTable: lineFormatResult,
+      rawLineCount: lines.length,
+    };
+  }
+
+  // Strategy B: Traditional multi-column table detection
   // Step 1: Find candidate header lines
   const headerCandidates = findHeaderCandidates(lines);
 
   if (headerCandidates.length === 0) {
+    console.log('PDF table detector: no explicit headers found, trying inferred');
     // Try a more lenient search — look for lines followed by date-like rows
     const inferredHeaders = inferHeadersFromDataPatterns(lines);
     if (inferredHeaders.length === 0) {
+      // If line format found some rows but < 3, still use it
+      if (lineFormatResult && lineFormatResult.dataRows.length > 0) {
+        console.log('PDF table detector: using line format with', lineFormatResult.dataRows.length, 'rows (below threshold but best available)');
+        return {
+          success: true,
+          tables: [lineFormatResult],
+          mergedTable: lineFormatResult,
+          rawLineCount: lines.length,
+        };
+      }
       return {
         success: false,
         tables: [],
@@ -131,13 +168,27 @@ export function detectTables(extractedText: string): TableDetectionResult {
   const tables: DetectedTable[] = [];
 
   for (const headerInfo of headerCandidates) {
+    console.log('PDF table detector: trying header at line', headerInfo.lineNumber, ':', headerInfo.text.slice(0, 100));
     const table = extractTable(lines, headerInfo.lineNumber, headerInfo.text);
     if (table && table.dataRows.length > 0) {
+      console.log('PDF table detector: extracted table with', table.dataRows.length, 'rows,', table.columns.length, 'columns');
       tables.push(table);
+    } else {
+      console.log('PDF table detector: no data rows found for this header');
     }
   }
 
   if (tables.length === 0) {
+    // Fall back to line format if it had any results
+    if (lineFormatResult && lineFormatResult.dataRows.length > 0) {
+      console.log('PDF table detector: columnar failed, falling back to line format with', lineFormatResult.dataRows.length, 'rows');
+      return {
+        success: true,
+        tables: [lineFormatResult],
+        mergedTable: lineFormatResult,
+        rawLineCount: lines.length,
+      };
+    }
     return {
       success: false,
       tables: [],
@@ -155,6 +206,160 @@ export function detectTables(extractedText: string): TableDetectionResult {
     tables,
     mergedTable,
     rawLineCount: lines.length,
+  };
+}
+
+// ─── Simple Line-Format Detection ─────────────────────────────────────────
+
+/**
+ * Detect transactions in a simple line format commonly used by credit card statements.
+ * Each transaction is on a single line: "DD Mon DESCRIPTION AMOUNT"
+ * 
+ * Examples:
+ *   17 Jan TESCO STORES 3572 DUBLIN 4 17.18
+ *   18 Jan Revolut**2587* Dublin IR 250.00
+ *   25 Jan THE OLD SPOT Dublin 4 IR 105.00
+ */
+const SIMPLE_LINE_PATTERN = /^(\d{1,2})\s+(\w{3,9})\s+(.+?)\s+(-?[\d,]+\.\d{2})\s*$/;
+const SIMPLE_LINE_PATTERN_EURO = /^(\d{1,2})\s+(\w{3,9})\s+(.+?)\s+€?(-?[\d,]+\.\d{2})\s*$/;
+
+// OCR-tolerant version: month token can be garbled, optional minus for payments/refunds
+// Also handles space between minus and digits from OCR, and CR/DR suffixes
+const SIMPLE_LINE_PATTERN_OCR = /^(\d{1,2})\s+(\S{2,9})\s+(.+?)\s+€?(-?\s?[\d,]+\.\d{2})\s*(?:CR|DR)?\s*$/i;
+
+function isSimpleTransactionLine(line: string): boolean {
+  const trimmed = line.trim();
+  return (
+    SIMPLE_LINE_PATTERN.test(trimmed) ||
+    SIMPLE_LINE_PATTERN_EURO.test(trimmed) ||
+    SIMPLE_LINE_PATTERN_OCR.test(trimmed)
+  );
+}
+
+function parseSimpleTransactionLine(line: string): { date: string; description: string; amount: string } | null {
+  const trimmed = line.trim();
+  const match = trimmed.match(SIMPLE_LINE_PATTERN_OCR) ||
+    trimmed.match(SIMPLE_LINE_PATTERN) ||
+    trimmed.match(SIMPLE_LINE_PATTERN_EURO);
+  if (!match) return null;
+
+  const day = match[1];
+  const month = match[2];
+  const description = match[3].trim();
+  const amount = match[4];
+
+  return { date: `${day} ${month}`, description, amount };
+}
+
+function detectSimpleLineFormat(lines: string[]): DetectedTable | null {
+  // Scan the ENTIRE document for all lines matching the simple transaction pattern.
+  // Credit card statements often have multiple sections (Purchases, Payments, etc.)
+  // so we must not stop at the first section boundary.
+  const transactionLines: Array<{ lineNumber: number; line: string }> = [];
+  let headerLineNumber = -1;
+
+  for (let i = 0; i < lines.length; i++) {
+    const line = lines[i].trim();
+    if (!line) continue;
+
+    if (isSimpleTransactionLine(line)) {
+      // If this is the first transaction line, look for a header above it
+      if (transactionLines.length === 0 && i > 0) {
+        headerLineNumber = i - 1;
+        for (let h = i - 1; h >= Math.max(0, i - 3); h--) {
+          const hl = lines[h].trim().toLowerCase();
+          if (hl.includes('transaction') || hl.includes('detail') || hl.includes('date')) {
+            headerLineNumber = h;
+            break;
+          }
+        }
+      }
+      transactionLines.push({ lineNumber: i, line });
+    }
+    // Non-matching lines are simply skipped — we keep scanning the whole document
+  }
+
+  if (transactionLines.length === 0) return null;
+
+  if (headerLineNumber === -1) headerLineNumber = transactionLines[0].lineNumber - 1;
+  if (headerLineNumber < 0) headerLineNumber = 0;
+
+  // Detect credit card context by scanning document text for keywords
+  const keywordMatch = lines.slice(0, Math.min(60, lines.length)).some(l => {
+    const lower = l.toLowerCase();
+    return (
+      lower.includes('credit card') ||
+      lower.includes('card number') ||
+      lower.includes('card statement') ||
+      lower.includes('visa') ||
+      lower.includes('mastercard') ||
+      lower.includes('credit card statement')
+    );
+  });
+
+  // Secondary heuristic: if the vast majority of amounts are positive (no minus sign),
+  // this is almost certainly a credit card or expense-only statement where positive = expense.
+  // A current/checking account statement would typically have a mix of + and - amounts.
+  let negativeCount = 0;
+  let positiveCount = 0;
+  for (const { line } of transactionLines) {
+    const parsed = parseSimpleTransactionLine(line);
+    if (parsed) {
+      if (parsed.amount.trim().startsWith('-')) {
+        negativeCount++;
+      } else {
+        positiveCount++;
+      }
+    }
+  }
+  const totalParsed = positiveCount + negativeCount;
+  const mostlyPositive = totalParsed >= 3 && (positiveCount / totalParsed) > 0.7;
+
+  const isCreditCard = keywordMatch || mostlyPositive;
+  if (isCreditCard) {
+    console.log('PDF simple line detector: credit card detected',
+      keywordMatch ? '(keyword match)' : `(${positiveCount}/${totalParsed} amounts positive — inferred)`,
+      '— amounts will be treated as expenses');
+  }
+
+  // Build a synthetic 3-column table: Date, Description, Amount
+  const columns: DetectedColumn[] = [
+    { index: 0, startPos: 0, endPos: 10, name: 'Date', inferredType: 'date', sampleFormat: 'D Mon' },
+    { index: 1, startPos: 10, endPos: 80, name: 'Description', inferredType: 'text' },
+    { index: 2, startPos: 80, endPos: 100, name: 'Amount', inferredType: 'amount' },
+  ];
+
+  const dataRows: DetectedRow[] = transactionLines.map(({ lineNumber, line }) => {
+    const parsed = parseSimpleTransactionLine(line);
+    if (parsed) {
+      return {
+        lineNumber,
+        rawText: line,
+        fields: [parsed.date, parsed.description, parsed.amount],
+        isDataRow: true,
+      };
+    }
+    return {
+      lineNumber,
+      rawText: line,
+      fields: [line],
+      isDataRow: false,
+    };
+  }).filter(r => r.isDataRow);
+
+  console.log('PDF simple line detector: found', dataRows.length, 'transaction lines, header at line', headerLineNumber, 'creditCard:', isCreditCard);
+
+  return {
+    headerLineNumber,
+    headerText: lines[headerLineNumber]?.trim() || 'Transactions',
+    columns,
+    dataRows,
+    startLine: headerLineNumber,
+    endLine: transactionLines[transactionLines.length - 1].lineNumber,
+    totalDataRows: dataRows.length,
+    confidence: dataRows.length >= 5 ? 'high' : dataRows.length >= 3 ? 'medium' : 'low',
+    warnings: [],
+    isCreditCardFormat: isCreditCard,
   };
 }
 
@@ -245,7 +450,7 @@ function inferHeadersFromDataPatterns(lines: string[]): HeaderCandidate[] {
   for (let i = 0; i < lines.length; i++) {
     const line = lines[i].trim();
     const firstToken = line.split(/\s{2,}/)[0]?.trim() || '';
-    const isDateLine = DATE_PATTERNS.some(p => p.test(firstToken));
+    const isDateLine = DATE_PATTERNS.some(p => p.test(firstToken)) || OCR_DATE_PATTERNS.some(p => p.test(firstToken));
 
     if (isDateLine) {
       if (dateRunStart === -1) {
@@ -441,7 +646,14 @@ function extractTable(lines: string[], headerLineNumber: number, headerText: str
         isDataRow: true,
       });
       endLine = i;
-    } else if (dataRows.length > 0) {
+    } else if (dataRows.length === 0 && line.trim().length > 10) {
+      // Log first few rejected lines after header to help debug
+      if (i <= headerLineNumber + 5) {
+        console.log(`PDF row rejected (line ${i}):`, line.slice(0, 100), '| fields:', fields.slice(0, 5));
+      }
+    }
+    
+    if (!isDataRow && dataRows.length > 0) {
       // Could be a continuation line (description overflow) — attach to previous row
       const lastRow = dataRows[dataRows.length - 1];
       const descColIdx = columns.findIndex(c =>
@@ -509,8 +721,11 @@ function isRepeatedHeader(line: string, originalHeader: string): boolean {
 function validateDataRow(fields: string[], columns: DetectedColumn[]): boolean {
   if (fields.every(f => !f)) return false;
 
-  // Check: at least one field matches a date pattern
+  // Check: at least one field matches a date pattern (strict)
   const hasDate = fields.some(f => DATE_PATTERNS.some(p => p.test(f.trim())));
+
+  // Check: at least one field looks like a date even with OCR noise
+  const hasOcrDate = fields.some(f => OCR_DATE_PATTERNS.some(p => p.test(f.trim())));
 
   // Check: at least one field matches an amount pattern
   const hasAmount = fields.some(f => AMOUNT_PATTERNS.some(p => p.test(f.trim())));
@@ -518,8 +733,11 @@ function validateDataRow(fields: string[], columns: DetectedColumn[]): boolean {
   // Check: at least one field has text content (description)
   const hasText = fields.some(f => f.length > 3 && /[a-zA-Z]/.test(f));
 
-  // A valid data row should have a date and at least one of amount/text
-  return hasDate && (hasAmount || hasText);
+  // A valid data row should have a date (or OCR date) and at least one of amount/text
+  if (hasDate && (hasAmount || hasText)) return true;
+  if (hasOcrDate && hasAmount) return true;
+
+  return false;
 }
 
 // ─── Column Type Refinement ───────────────────────────────────────────────

@@ -26,6 +26,13 @@ interface PdfTextExtractorType {
   detectPdfType(fileUri: string): Promise<PdfTypeResult>;
 }
 
-const PdfTextExtractor = requireNativeModule<PdfTextExtractorType>('PdfTextExtractor');
+let PdfTextExtractor: PdfTextExtractorType | null = null;
+try {
+  PdfTextExtractor = requireNativeModule<PdfTextExtractorType>('PdfTextExtractor');
+} catch (e) {
+  console.warn(
+    'PdfTextExtractor native module not available. PDF import requires a development build (not Expo Go).'
+  );
+}
 
 export default PdfTextExtractor;
