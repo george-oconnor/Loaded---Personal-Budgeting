@@ -106,14 +106,20 @@ export default function GenericCSVPreviewScreen() {
       if (!user?.id || transactions.length === 0) return;
       try {
         const existing = await getAllTransactionsForUser(user.id);
-        const existingKeys = new Set(existing.map(makeKeyFromDoc));
+        // Use a count map so each existing transaction can only match one import
+        const existingKeyCounts = new Map<string, number>();
+        for (const doc of existing) {
+          const key = makeKeyFromDoc(doc);
+          existingKeyCounts.set(key, (existingKeyCounts.get(key) || 0) + 1);
+        }
         const dupKeys = new Set<string>();
         let unique = 0;
         let skipped = 0;
         for (const t of transactions) {
           const key = makeKeyFromTransaction(t);
-          const isExisting = existingKeys.has(key);
-          if (isExisting) {
+          const remaining = existingKeyCounts.get(key) || 0;
+          if (remaining > 0) {
+            existingKeyCounts.set(key, remaining - 1);
             skipped++;
             dupKeys.add(key);
             continue;
@@ -156,13 +162,22 @@ export default function GenericCSVPreviewScreen() {
 
       // Fetch existing transactions to dedupe and detect transfers
       const existing = await getAllTransactionsForUser(user.id);
-      const existingKeys = new Set(existing.map(makeKeyFromDoc));
+      // Use a count map so each existing transaction can only match one import
+      const existingKeyCounts = new Map<string, number>();
+      for (const doc of existing) {
+        const key = makeKeyFromDoc(doc);
+        existingKeyCounts.set(key, (existingKeyCounts.get(key) || 0) + 1);
+      }
 
       // Dedupe against existing
       const deduped: Transaction[] = [];
       for (const t of transactions) {
         const key = makeKeyFromTransaction(t);
-        if (existingKeys.has(key)) continue;
+        const remaining = existingKeyCounts.get(key) || 0;
+        if (remaining > 0) {
+          existingKeyCounts.set(key, remaining - 1);
+          continue;
+        }
         deduped.push(t);
       }
 

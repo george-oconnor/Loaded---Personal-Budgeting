@@ -18,6 +18,7 @@ import {
     Text,
     View
 } from "react-native";
+import { Feather } from "@expo/vector-icons";
 import { SafeAreaView } from "react-native-safe-area-context";
 import { clearParsedTransactions, getParsedTransactions } from "./paste";
 
@@ -113,14 +114,20 @@ export default function ImportPreviewScreen() {
         const existing = await getAllTransactionsForUser(user.id);
         console.log(`Fetched ${existing.length} existing transactions in ${Date.now() - startTime}ms`);
         
-        const existingKeys = new Set(existing.map(makeKeyFromDoc));
+        // Use a count map so each existing transaction can only match one import
+        const existingKeyCounts = new Map<string, number>();
+        for (const doc of existing) {
+          const key = makeKeyFromDoc(doc);
+          existingKeyCounts.set(key, (existingKeyCounts.get(key) || 0) + 1);
+        }
         const dupKeys = new Set<string>();
         let unique = 0;
         let skipped = 0;
         for (const t of transactions) {
           const key = makeKeyFromTransaction(t);
-          const isExisting = existingKeys.has(key);
-          if (isExisting) {
+          const remaining = existingKeyCounts.get(key) || 0;
+          if (remaining > 0) {
+            existingKeyCounts.set(key, remaining - 1);
             skipped++;
             dupKeys.add(key);
             continue;
@@ -175,10 +182,14 @@ export default function ImportPreviewScreen() {
 
       console.log('Step 2: Deduplication...');
       const step2Start = Date.now();
-      // Create deduplication keys from both DB and queue
-      const existingKeys = new Set([
-        ...existing.map(makeKeyFromDoc),
-        ...queuedTransactions.map((q: any) => makeKeyFromTransaction({
+      // Use a count map so each existing transaction can only match one import
+      const existingKeyCounts = new Map<string, number>();
+      for (const doc of existing) {
+        const key = makeKeyFromDoc(doc);
+        existingKeyCounts.set(key, (existingKeyCounts.get(key) || 0) + 1);
+      }
+      for (const q of queuedTransactions) {
+        const key = makeKeyFromTransaction({
           title: q.title,
           subtitle: q.subtitle,
           amount: Math.abs(q.amount),
@@ -187,8 +198,9 @@ export default function ImportPreviewScreen() {
           categoryId: q.categoryId,
           currency: q.currency,
           displayName: q.displayName,
-        }))
-      ]);
+        } as any);
+        existingKeyCounts.set(key, (existingKeyCounts.get(key) || 0) + 1);
+      }
 
       // Filter out transactions with zero amount and existing transactions
       const deduped: Transaction[] = [];
@@ -197,7 +209,11 @@ export default function ImportPreviewScreen() {
         // Skip zero-amount transactions
         if (zeroAmountIndices.has(i)) continue;
         const key = makeKeyFromTransaction(t);
-        if (existingKeys.has(key)) continue;
+        const remaining = existingKeyCounts.get(key) || 0;
+        if (remaining > 0) {
+          existingKeyCounts.set(key, remaining - 1);
+          continue;
+        }
         deduped.push(t);
       }
       console.log(`Step 2 complete: Deduplicated to ${deduped.length} transactions in ${Date.now() - step2Start}ms`);
@@ -494,31 +510,38 @@ export default function ImportPreviewScreen() {
     }
   };
 
-  const renderItem = ({ item, index }: { item: Transaction; index: number }) => {
+  const renderItem = ({ item }: { item: Transaction }) => {
     const isExpense = item.kind === "expense";
-    const isZeroAmount = zeroAmountIndices.has(index);
+    const isZeroAmount = item.amount === 0;
+    const key = makeKeyFromTransaction(item);
+    const isDuplicate = duplicateKeys.has(key);
     
     return (
-      <View className={`rounded-2xl border p-4 mb-3 ${isZeroAmount ? 'border-gray-300 bg-gray-50' : 'border-gray-200 bg-white'}`}>
+      <View className={`rounded-2xl border p-4 mb-3 ${isDuplicate ? 'border-red-200 bg-red-50' : isZeroAmount ? 'border-gray-300 bg-gray-50' : 'border-gray-200 bg-white'}`}>
         <View className="flex-row items-center justify-between mb-2">
           <View className="flex-1 flex-row items-center gap-2">
-            <Text className={`text-base font-semibold flex-1 ${isZeroAmount ? 'text-gray-400' : 'text-dark-100'}`} numberOfLines={1}>{item.title || "Transaction"}</Text>
-            {isZeroAmount && (
+            <Text className={`text-base font-semibold flex-1 ${isDuplicate || isZeroAmount ? 'text-gray-400' : 'text-dark-100'}`} numberOfLines={1}>{item.title || "Transaction"}</Text>
+            {isDuplicate && (
+              <View className="px-2 py-1 rounded-full bg-red-100">
+                <Text className="text-[11px] font-semibold text-red-700">Will skip</Text>
+              </View>
+            )}
+            {isZeroAmount && !isDuplicate && (
               <View className="bg-yellow-100 px-2 py-1 rounded">
                 <Text className="text-xs font-semibold text-yellow-800">Skipped</Text>
               </View>
             )}
           </View>
-          <Text className={`text-base font-bold ${isZeroAmount ? 'text-gray-400' : isExpense ? "text-red-500" : "text-green-600"}`}>
+          <Text className={`text-base font-bold ${isDuplicate || isZeroAmount ? 'text-gray-400' : isExpense ? "text-red-500" : "text-green-600"}`}>
             {isExpense ? "-" : "+"}{(item.amount / 100).toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })} {item.currency}
           </Text>
         </View>
-        <Text className={`text-sm ${isZeroAmount ? 'text-gray-400' : 'text-gray-500'}`} numberOfLines={1}>{item.subtitle || item.categoryId}</Text>
+        <Text className={`text-sm ${isDuplicate || isZeroAmount ? 'text-gray-400' : 'text-gray-500'}`} numberOfLines={1}>{item.subtitle || item.categoryId}</Text>
         <View className="flex-row justify-between items-center mt-2">
-          <Text className={`text-xs ${isZeroAmount ? 'text-gray-400' : 'text-gray-500'}`}>{new Date(item.date).toLocaleDateString()}</Text>
-          <Text className={`text-xs ${isZeroAmount ? 'text-gray-400' : 'text-gray-500'}`}>{item.categoryId}</Text>
+          <Text className={`text-xs ${isDuplicate || isZeroAmount ? 'text-gray-400' : 'text-gray-500'}`}>{new Date(item.date).toLocaleDateString()}</Text>
+          <Text className={`text-xs ${isDuplicate || isZeroAmount ? 'text-gray-400' : 'text-gray-500'}`}>{item.categoryId}</Text>
         </View>
-        {isZeroAmount && (
+        {isZeroAmount && !isDuplicate && (
           <Text className="text-xs text-yellow-700 mt-2">Zero amount transactions will not be imported</Text>
         )}
       </View>
@@ -588,17 +611,55 @@ export default function ImportPreviewScreen() {
       {/* Footer */}
       <View className="absolute bottom-0 left-0 right-0 px-5 pb-6 pt-4 bg-white border-t border-gray-200">
         <View className="gap-3">
+          {!precheckDone && !loading && (
+            <View className="items-center">
+              <Text className="text-xs text-gray-600">
+                Checking for duplicates...
+              </Text>
+            </View>
+          )}
+          {precheckDone && !loading && (
+            <View className="items-center">
+              <Text className="text-xs text-gray-600">
+                Will skip {preSkippedCount} duplicate{preSkippedCount === 1 ? "" : "s"} • Will import {preUniqueCount}
+              </Text>
+            </View>
+          )}
+          {loading && (
+            <View className="items-center">
+              <Text className="text-xs text-gray-600">
+                Skipping {skippedCount} duplicate{skippedCount === 1 ? "" : "s"} • Importing {uniqueCount}
+              </Text>
+            </View>
+          )}
           <Pressable
             onPress={handleImport}
-            disabled={loading || transactions.length === 0}
+            disabled={!precheckDone || loading || transactions.length === 0}
             className={`rounded-2xl py-4 items-center ${
-              loading || transactions.length === 0 ? "bg-gray-300" : "bg-sky-500"
+              !precheckDone || loading || transactions.length === 0 ? "bg-gray-300" : "bg-sky-500"
             }`}
           >
-            {loading ? (
-              <ActivityIndicator color="#fff" />
+            {!precheckDone ? (
+              <View className="flex-row items-center gap-2">
+                <ActivityIndicator color="#fff" />
+                <Text className="text-white text-base font-bold">
+                  Checking for duplicates...
+                </Text>
+              </View>
+            ) : loading ? (
+              <View className="flex-row items-center gap-2">
+                <ActivityIndicator color="#fff" />
+                <Text className="text-white text-base font-bold">
+                  Importing {importProgress.current}/{importProgress.total}...
+                </Text>
+              </View>
             ) : (
-              <Text className="text-white text-base font-bold">Import to Budget</Text>
+              <View className="flex-row items-center gap-2">
+                <Feather name="check-circle" size={18} color="white" />
+                <Text className="text-white text-base font-bold">
+                  Import {preUniqueCount}
+                </Text>
+              </View>
             )}
           </Pressable>
           <Pressable
@@ -609,7 +670,9 @@ export default function ImportPreviewScreen() {
             disabled={loading}
             className="rounded-2xl border-2 border-gray-200 py-4 items-center bg-white"
           >
-            <Text className="text-gray-700 text-base font-semibold">Cancel</Text>
+            <Text className="text-gray-700 text-base font-semibold">
+              {loading ? "Cancel import" : "Cancel"}
+            </Text>
           </Pressable>
         </View>
       </View>
