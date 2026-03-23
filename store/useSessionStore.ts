@@ -1,4 +1,4 @@
-import { createAccount, createUserProfile, deleteUserAccount, getCurrentSession, getCurrentUser, signIn, signOut } from "@/lib/appwrite";
+import { createAccount, createUserProfile, deleteUserAccount, getCurrentSession, getCurrentUser, signIn, signOut, updateUserProfile } from "@/lib/appwrite";
 import { queueDeleteAll } from "@/lib/deleteQueue";
 import { addBreadcrumb, captureException, clearUser as clearSentryUser, setUser as setSentryUser } from "@/lib/sentry";
 import type { SessionState } from "@/types/type";
@@ -44,6 +44,8 @@ export const useSessionStore = create<SessionState>((set) => ({
         setSentryUser({ id: user.$id, email: user.email, username: user.name });
         addBreadcrumb({ message: 'Login successful', category: 'auth', level: 'info', data: { userId: user.$id } });
         set({ user: { id: user.$id, email: user.email, name: user.name }, token: user.$id, status: "authenticated", error: null });
+        // Update last login time (fire-and-forget)
+        updateUserProfile(user.$id, { lastLoginTime: new Date().toISOString() }).catch(() => {});
       }
     } catch (err) {
       const errorMsg = err instanceof Error ? err.message : "Login failed";
@@ -72,6 +74,8 @@ export const useSessionStore = create<SessionState>((set) => ({
         setSentryUser({ id: user.$id, email: user.email, username: fullName });
         addBreadcrumb({ message: 'Signup successful', category: 'auth', level: 'info', data: { userId: user.$id } });
         set({ user: { id: user.$id, email: user.email, name: fullName, firstName, lastName }, token: user.$id, status: "authenticated", error: null });
+        // Update last login time (fire-and-forget)
+        updateUserProfile(user.$id, { lastLoginTime: new Date().toISOString() }).catch(() => {});
       }
     } catch (err) {
       const errorMsg = err instanceof Error ? err.message : "Signup failed";
