@@ -5,7 +5,7 @@ import { useHomeStore } from "@/store/useHomeStore";
 import { useTransactionDetailStore } from "@/store/useTransactionDetailStore";
 import type { Transaction } from "@/types/type";
 import { Feather } from "@expo/vector-icons";
-import { router } from "expo-router";
+import { router, useNavigation } from "expo-router";
 import { memo, useCallback, useEffect, useMemo, useRef, useState } from "react";
 import {
   Image,
@@ -110,6 +110,18 @@ export default function Search() {
   const [query, setQuery] = useState("");
   const inputRef = useRef<TextInput>(null);
   const currency = summary?.currency ?? "EUR";
+  const navigation = useNavigation();
+
+  // Clear search bar when tapping the search tab while already on it
+  useEffect(() => {
+    const unsubscribe = (navigation as any).addListener("tabPress", () => {
+      if (query) {
+        setQuery("");
+        inputRef.current?.focus();
+      }
+    });
+    return unsubscribe;
+  }, [navigation, query]);
 
   const sections = useMemo((): SearchSection[] => {
     if (!query.trim() || !transactions) return [];
