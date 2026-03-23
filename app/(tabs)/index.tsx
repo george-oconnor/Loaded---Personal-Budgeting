@@ -17,8 +17,8 @@ import { useSessionStore } from "@/store/useSessionStore";
 
 const quickActions: QuickAction[] = [
   { id: "add", label: "Add", icon: "plus" },
-  { id: "import", label: "Import", icon: "download" },
   { id: "analytics", label: "Stats", icon: "bar-chart-2" },
+  { id: "balances", label: "Balances", icon: "credit-card" },
 ];
 
 
@@ -45,13 +45,14 @@ export default function Index() {
     }
   }, [user?.id, fetchHome]);
 
-  // Refresh when app comes back to the foreground
+  // Refresh when app comes back to the foreground only if data isn't loaded
   useEffect(() => {
     const subscription = AppState.addEventListener("change", (nextAppState) => {
       if (
         appState.current.match(/inactive|background/) &&
         nextAppState === "active" &&
-        user?.id
+        user?.id &&
+        !useHomeStore.getState().summary
       ) {
         fetchHome();
         setRefreshTrigger((prev) => prev + 1);
