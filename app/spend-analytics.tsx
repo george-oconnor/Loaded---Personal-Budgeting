@@ -289,19 +289,20 @@ export default function SpendAnalytics() {
     const merchantMap = new Map<string, { name: string; transactions: Transaction[]; totalSpent: number; }>();
     
     cycleTransactions
-      .filter(t => t.kind === "expense")
+      .filter(t => t.kind === "expense" && !t.excludeFromAnalytics)
       .forEach(transaction => {
-        const merchantName = transaction.title || "Unknown Merchant";
-        
-        if (!merchantMap.has(merchantName)) {
-          merchantMap.set(merchantName, {
+        const merchantName = transaction.displayName || transaction.title || "Unknown Merchant";
+        const key = merchantName.toLowerCase();
+
+        if (!merchantMap.has(key)) {
+          merchantMap.set(key, {
             name: merchantName,
             transactions: [],
             totalSpent: 0,
           });
         }
         
-        const merchant = merchantMap.get(merchantName)!;
+        const merchant = merchantMap.get(key)!;
         merchant.transactions.push(transaction);
         merchant.totalSpent += Math.abs(transaction.amount);
       });
@@ -653,7 +654,7 @@ export default function SpendAnalytics() {
                       categoryColor={category?.color}
                       categoryIcon={normalizeFeatherIconName(category?.icon as any, category?.name)}
                       categoryName={category?.name}
-                      onPress={() => router.push(`/category-transactions?merchantName=${encodeURIComponent(merchant.name)}&cycleOffset=${cycleOffset}`)}
+                      onPress={() => router.push({ pathname: "/merchant-detail", params: { name: merchant.name } })}
                     />
                   );
                 })}
