@@ -2,6 +2,7 @@ import AsyncStorage from '@react-native-async-storage/async-storage';
 import * as Notifications from 'expo-notifications';
 import { AppState } from 'react-native';
 import { getAccountImports, getUserPreferences, saveAccountImport, saveUserPreferences } from './appwrite';
+import { formatCurrency } from './currencyFunctions';
 import { captureException } from './sentry';
 
 // Storage keys
@@ -18,6 +19,7 @@ export const NOTIFICATION_IDS = {
   BUDGET_EXCEEDED: 'budget-exceeded',
   BUDGET_ON_TRACK: 'budget-on-track',
   ACCOUNT_STALE: 'account-stale',
+  SUBSCRIPTION_REMINDER: 'subscription-reminder',
 } as const;
 
 // Configure notification behavior
@@ -926,4 +928,49 @@ export async function disableNotifications(userId: string): Promise<void> {
     captureException(error instanceof Error ? error : new Error(String(error)));
     throw error;
   }
+}
+
+/**
+ * Schedule a reminder notification for the day before a subscription payment.
+ * The notification fires at 10:00 AM the day before `nextBillingDate`.
+ * If the billing date is today or in the past, no notification is scheduled.
+ */
+export async function scheduleSubscriptionReminder(params: {
+  subscriptionId: string;
+  merchantName: string;
+  amount: number;
+  currency: string;
+  nextBillingDate: string;
+}): Promise<string | null> {
+  const { subscriptionId, merchantName, amount, currency, nextBillingDate } = params;
+
+  if (!nextBillingDate) return null;
+
+  // Calculate reminder date: day before billing, at 10:00 AM local
+  const billingDate = new Date(nextBillingDate);
+  const reminderDate = new Date(billingDate);
+  reminderDate.setDate(reminderDate.getDate() - 1);
+  reminderDate.setHours(10, 0, 0, 0);
+
+  // Don't schedule if the reminder time is already past
+  if (reminderDate.getTime() <= Date.now()) return null;
+
+  const id = `${NOTIFICATION_IDS.SUBSCRIPTION_REMINDER}-${subscriptionId}`;
+  const formattedAmount = formatCurrency(amount / 100, currency);
+
+  return scheduleNotification(
+    id,
+    `${merchantName} payment tomorrow`,
+    `Your ${merchantName} subscription of ${formattedAmount} is due tomorrow.`,
+    { type: Notifications.SchedulableTriggerInputTypes.DATE, date: reminderDate },
+    { type: 'subscription-reminder', subscriptionId, merchantName },
+  );
+}
+
+/**
+ * Cancel a previously scheduled subscription reminder.
+ */
+export async function cancelSubscriptionReminder(subscriptionId: string): Promise<void> {
+  const id = `${NOTIFICATION_IDS.SUBSCRIPTION_REMINDER}-${subscriptionId}`;
+  await cancelNotification(id);
 }

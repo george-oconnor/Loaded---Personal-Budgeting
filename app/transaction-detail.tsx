@@ -948,6 +948,26 @@ export default function TransactionDetailScreen() {
           )}
         </View>
 
+        {/* Mark as Subscription (only for expenses when not editing) */}
+        {!isEditing && transaction.kind === "expense" && (
+          <Pressable
+            onPress={() =>
+              router.push({
+                pathname: "/create-subscription",
+                params: {
+                  merchantName: transaction.displayName || transaction.title,
+                  transactionId: transaction.id,
+                  categoryId: transaction.categoryId ?? "",
+                },
+              })
+            }
+            className="flex-row items-center justify-center border border-gray-300 rounded-2xl py-4 mb-3 active:opacity-70"
+          >
+            <Feather name="repeat" size={16} color="#1F2937" style={{ marginRight: 8 }} />
+            <Text className="text-dark-100 font-semibold">Mark as Subscription</Text>
+          </Pressable>
+        )}
+
         {/* Delete Button (only visible when not editing) */}
         {!isEditing && (
           <Pressable

@@ -18,6 +18,9 @@ export default function QuickActions({ actions }: { actions: QuickAction[] }) {
       case "balances":
         router.push("/balances");
         break;
+      case "subscriptions":
+        router.push("/subscriptions");
+        break;
       default:
         break;
     }

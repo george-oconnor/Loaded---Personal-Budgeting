@@ -6,6 +6,7 @@ import { useSafeAreaInsets } from "react-native-safe-area-context";
 
 const TAB_CONFIG: Record<string, { label: string; icon: keyof typeof Feather.glyphMap }> = {
   index: { label: "Home", icon: "home" },
+  subs: { label: "Subs", icon: "repeat" },
   import: { label: "Import", icon: "download" },
   search: { label: "Search", icon: "search" },
 };
@@ -92,6 +93,7 @@ export default function TabsLayout() {
       screenOptions={{ headerShown: false }}
     >
       <Tabs.Screen name="index" />
+      <Tabs.Screen name="subs" />
       <Tabs.Screen name="import" />
       <Tabs.Screen name="search" />
     </Tabs>

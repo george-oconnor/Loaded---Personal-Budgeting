@@ -24,6 +24,7 @@ import {
   useNotificationStore
 } from '@/store/useNotificationStore';
 import { useSessionStore } from '@/store/useSessionStore';
+import { useSubscriptionsStore } from '@/store/useSubscriptionsStore';
 import * as Notifications from 'expo-notifications';
 import { router } from 'expo-router';
 import { useEffect, useRef } from 'react';
@@ -44,6 +45,7 @@ export function useNotifications() {
   
   const lastBudgetCheck = useRef(0);
   const lastImportCheck = useRef(0);
+  const lastSubsReminderSync = useRef(0);
   const notificationListener = useRef<Notifications.Subscription | null>(null);
   const responseListener = useRef<Notifications.Subscription | null>(null);
   const initialized = useRef(false);
@@ -70,6 +72,9 @@ export function useNotifications() {
       // Schedule recurring notifications
       await scheduleWeeklyImportReminder();
       await scheduleDailyBudgetCheck();
+
+      // Sync subscription reminders
+      await syncSubscriptionReminders();
 
       // Clear badge on app open
       await clearBadgeCount();
@@ -112,6 +117,9 @@ export function useNotifications() {
       case 'daily_check':
         router.push('/spend-analytics' as any);
         break;
+      case 'subscription-reminder':
+        router.push('/subscriptions' as any);
+        break;
       default:
         // Default to home
         router.push('/');
@@ -119,6 +127,25 @@ export function useNotifications() {
 
     // Clear badge when user interacts with notification
     clearBadgeCount();
+  };
+
+  // Sync subscription reminders: advance past billing dates and schedule upcoming reminders
+  const syncSubscriptionReminders = async () => {
+    const now = Date.now();
+    // Throttle to once per 4 hours
+    if (now - lastSubsReminderSync.current < BUDGET_CHECK_INTERVAL_MS) return;
+    lastSubsReminderSync.current = now;
+
+    try {
+      const { refreshSubscriptionReminders, confirmedSubscriptions, fetchAll } = useSubscriptionsStore.getState();
+      // Ensure subscriptions are loaded first
+      if (confirmedSubscriptions.length === 0) {
+        await fetchAll();
+      }
+      await refreshSubscriptionReminders();
+    } catch (error) {
+      console.error('Failed to sync subscription reminders:', error);
+    }
   };
 
   // Check budget status and create notifications
@@ -228,6 +255,7 @@ export function useNotifications() {
         clearBadgeCount();
         checkBudgetStatus();
         checkStaleImports();
+        syncSubscriptionReminders();
       }
     };
 
@@ -237,6 +265,7 @@ export function useNotifications() {
     if (user?.id && summary) {
       checkBudgetStatus();
       checkStaleImports();
+      syncSubscriptionReminders();
     }
 
     return () => {

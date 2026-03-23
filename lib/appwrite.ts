@@ -27,6 +27,9 @@ const accountImportsTableId =
 const userPreferencesTableId =
   process.env.EXPO_PUBLIC_APPWRITE_TABLE_USER_PREFERENCES ||
   process.env.EXPO_PUBLIC_APPWRITE_COLLECTION_USER_PREFERENCES;
+const subscriptionsTableId =
+  process.env.EXPO_PUBLIC_APPWRITE_TABLE_SUBSCRIPTIONS ||
+  process.env.EXPO_PUBLIC_APPWRITE_COLLECTION_SUBSCRIPTIONS;
 
 export const appwriteClient = new Client();
 if (endpoint && projectId) {
@@ -129,6 +132,7 @@ export type UserDoc = {
   lastName: string;
   createdAt: string;
   updatedAt?: string;
+  lastLoginTime?: string;
 };
 
 export async function createUserProfile(
@@ -168,6 +172,7 @@ export async function getUserProfile(userId: string) {
       lastName: doc.lastname,
       createdAt: doc.createdAt,
       updatedAt: doc.updatedAt,
+      lastLoginTime: doc.lastLoginTime,
     };
     console.log("getUserProfile - fetched:", { 
       userId, 
@@ -1336,5 +1341,72 @@ export async function saveUserPreferences(
     });
     throw err;
   }
+}
+
+// ── Confirmed Subscriptions ──
+
+export type SubscriptionDoc = {
+  userId: string;
+  merchantName: string;
+  displayName: string;
+  amount: number;
+  frequency: string;
+  categoryId: string;
+  status: "active" | "paused" | "cancelled";
+  nextBillingDate?: string;
+  confirmedAt: string; // Appwrite datetime
+  notes?: string;
+};
+
+export async function getConfirmedSubscriptions(userId: string): Promise<(SubscriptionDoc & { id: string })[]> {
+  if (!databaseId || !subscriptionsTableId) throw new Error("Subscriptions collection not configured");
+
+  const all: any[] = [];
+  const limit = 100;
+  let cursor: string | undefined;
+
+  while (true) {
+    const queries: any[] = [
+      Query.equal("userId", userId),
+      Query.limit(limit),
+      Query.orderDesc("confirmedAt"),
+    ];
+    if (cursor) queries.push(Query.cursorAfter(cursor));
+
+    const res = await databases.listDocuments(databaseId, subscriptionsTableId, queries);
+    const docs = res.documents || [];
+    all.push(...docs);
+    if (docs.length < limit) break;
+    cursor = docs[docs.length - 1]?.$id;
+    if (!cursor) break;
+  }
+
+  return all.map((d) => ({ ...d, id: d.$id })) as (SubscriptionDoc & { id: string })[];
+}
+
+export async function createSubscription(userId: string, data: Omit<SubscriptionDoc, "userId">) {
+  if (!databaseId || !subscriptionsTableId) throw new Error("Subscriptions collection not configured");
+
+  return await databases.createDocument(
+    databaseId,
+    subscriptionsTableId,
+    ID.unique(),
+    { userId, ...data },
+    [
+      Permission.read(Role.user(userId)),
+      Permission.update(Role.user(userId)),
+      Permission.delete(Role.user(userId)),
+    ]
+  );
+}
+
+export async function updateSubscription(docId: string, updates: Partial<SubscriptionDoc>) {
+  if (!databaseId || !subscriptionsTableId) throw new Error("Subscriptions collection not configured");
+  return await databases.updateDocument(databaseId, subscriptionsTableId, docId, updates);
+}
+
+export async function deleteSubscription(docId: string) {
+  if (!databaseId || !subscriptionsTableId) throw new Error("Subscriptions collection not configured");
+  return await databases.deleteDocument(databaseId, subscriptionsTableId, docId);
 }
 
