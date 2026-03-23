@@ -772,7 +772,21 @@ export default function TransactionDetailScreen() {
               style={{ paddingVertical: 0 }}
             />
           ) : (
-            <Text className="text-base font-semibold text-dark-100">{transaction.displayName || transaction.title}</Text>
+            <Pressable
+              onPress={() => {
+                const merchantName = transaction.displayName || transaction.title;
+                if (merchantName) {
+                  router.push({
+                    pathname: "/merchant-detail",
+                    params: { name: merchantName },
+                  } as any);
+                }
+              }}
+              className="flex-row items-center justify-between active:opacity-70"
+            >
+              <Text className="text-base font-semibold text-primary">{transaction.displayName || transaction.title}</Text>
+              <Feather name="chevron-right" size={18} color="#9CA3AF" />
+            </Pressable>
           )}
         </View>
 
