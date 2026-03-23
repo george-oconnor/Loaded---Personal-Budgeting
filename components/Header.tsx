@@ -82,8 +82,8 @@ export default function Header({
   return (
     <View className={`flex-row items-center justify-between pt-4 ${noPaddingBottom ? "" : "pb-6"}`}>
       <View>
-        <Text className="text-xs text-gray-500">{subtitle}</Text>
         <Text className="text-2xl font-bold text-dark-100">{displayTitle}</Text>
+        <Text className="text-sm text-gray-500 mt-2">{subtitle}</Text>
       </View>
       <View className="flex-row items-center gap-3">
         {/* Notification Bell - opens notification tray, transforms during sync/delete */}

@@ -69,12 +69,12 @@ export default function ImportTabScreen() {
   return (
     <SafeAreaView className="flex-1 bg-white">
       <ScrollView
-        contentContainerStyle={{ flexGrow: 1, paddingHorizontal: 20, paddingTop: 20, paddingBottom: 100 }}
+        contentContainerStyle={{ flexGrow: 1, paddingHorizontal: 20, paddingTop: 16, paddingBottom: 100 }}
         showsVerticalScrollIndicator={false}
       >
         {/* Header */}
-        <View className="mb-8">
-          <Text className="text-3xl font-bold text-dark-100">Import Transactions</Text>
+        <View className="pb-5">
+          <Text className="text-2xl font-bold text-dark-100">Import Transactions</Text>
           <Text className="text-sm text-gray-500 mt-2">
             Add transactions from your bank or financial accounts
           </Text>
