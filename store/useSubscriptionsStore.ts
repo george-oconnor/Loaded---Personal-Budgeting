@@ -106,8 +106,9 @@ export const useSubscriptionsStore = create<SubscriptionsState>((set, get) => ({
       let confirmed: ConfirmedSubscription[] = [];
       try {
         confirmed = await getConfirmedSubscriptions(user.id);
-      } catch {
-        // Collection may not exist yet — gracefully continue with empty
+      } catch (e) {
+        console.warn("[Subscriptions] Failed to fetch confirmed:", e);
+        captureException(e as Error);
       }
 
       // Fetch 12 months of transaction history for detection
