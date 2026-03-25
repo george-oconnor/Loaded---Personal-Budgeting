@@ -23,6 +23,8 @@ export const useSessionStore = create<SessionState>((set) => ({
       if (user) {
         setSentryUser({ id: user.$id, email: user.email, username: user.name });
         set({ user: { id: user.$id, email: user.email, name: user.name }, token: session.$id, status: "authenticated", error: null });
+        // Update last login time (fire-and-forget)
+        updateUserProfile(user.$id, { lastLoginTime: new Date().toISOString() }).catch(() => {});
         return;
       }
 
