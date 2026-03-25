@@ -8,7 +8,8 @@
       "env": {
         "EXPO_PUBLIC_APPWRITE_TABLE_ICON_VOTES": "icon_votes",
         "EXPO_PUBLIC_APPWRITE_TABLE_ACCOUNT_IMPORTS": "accountImports",
-        "EXPO_PUBLIC_APPWRITE_TABLE_USER_PREFERENCES": "userPreferences"
+        "EXPO_PUBLIC_APPWRITE_TABLE_USER_PREFERENCES": "userPreferences",
+        "EXPO_PUBLIC_APPWRITE_TABLE_SUBSCRIPTIONS": "subscriptions"
       },
       "ios": {
         "simulator": true
@@ -18,7 +19,8 @@
       "env": {
         "EXPO_PUBLIC_APPWRITE_TABLE_ICON_VOTES": "icon_votes",
         "EXPO_PUBLIC_APPWRITE_TABLE_ACCOUNT_IMPORTS": "accountImports",
-        "EXPO_PUBLIC_APPWRITE_TABLE_USER_PREFERENCES": "userPreferences"
+        "EXPO_PUBLIC_APPWRITE_TABLE_USER_PREFERENCES": "userPreferences",
+        "EXPO_PUBLIC_APPWRITE_TABLE_SUBSCRIPTIONS": "subscriptions"
       },
       "android": {
         "gradleCommand": ":app:assembleRelease"
@@ -28,7 +30,8 @@
       "env": {
         "EXPO_PUBLIC_APPWRITE_TABLE_ICON_VOTES": "icon_votes",
         "EXPO_PUBLIC_APPWRITE_TABLE_ACCOUNT_IMPORTS": "accountImports",
-        "EXPO_PUBLIC_APPWRITE_TABLE_USER_PREFERENCES": "userPreferences"
+        "EXPO_PUBLIC_APPWRITE_TABLE_USER_PREFERENCES": "userPreferences",
+        "EXPO_PUBLIC_APPWRITE_TABLE_SUBSCRIPTIONS": "subscriptions"
       },
       "developmentClient": true
     },
@@ -36,7 +39,8 @@
       "env": {
         "EXPO_PUBLIC_APPWRITE_TABLE_ICON_VOTES": "icon_votes",
         "EXPO_PUBLIC_APPWRITE_TABLE_ACCOUNT_IMPORTS": "accountImports",
-        "EXPO_PUBLIC_APPWRITE_TABLE_USER_PREFERENCES": "userPreferences"
+        "EXPO_PUBLIC_APPWRITE_TABLE_USER_PREFERENCES": "userPreferences",
+        "EXPO_PUBLIC_APPWRITE_TABLE_SUBSCRIPTIONS": "subscriptions"
       },
       "ios": {
         "resourceClass": "medium"
@@ -46,7 +50,8 @@
       "env": {
         "EXPO_PUBLIC_APPWRITE_TABLE_ICON_VOTES": "icon_votes",
         "EXPO_PUBLIC_APPWRITE_TABLE_ACCOUNT_IMPORTS": "accountImports",
-        "EXPO_PUBLIC_APPWRITE_TABLE_USER_PREFERENCES": "userPreferences"
+        "EXPO_PUBLIC_APPWRITE_TABLE_USER_PREFERENCES": "userPreferences",
+        "EXPO_PUBLIC_APPWRITE_TABLE_SUBSCRIPTIONS": "subscriptions"
       },
       "ios": {
         "resourceClass": "medium"
