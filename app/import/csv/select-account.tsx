@@ -5,12 +5,12 @@ import { router, useLocalSearchParams } from "expo-router";
 import { useEffect, useState } from "react";
 import {
     Pressable,
-    SafeAreaView,
     ScrollView,
     Text,
     TextInput,
     View,
 } from "react-native";
+import { SafeAreaView } from "react-native-safe-area-context";
 
 interface ExistingAccount {
   key: string;
@@ -335,7 +335,7 @@ export default function CSVSelectAccountScreen() {
       </ScrollView>
 
       {/* Fixed Bottom Button */}
-      <View className="absolute bottom-0 left-0 right-0 px-5 pb-6 pt-4 bg-white border-t border-gray-200">
+      <View className="px-5 pb-6 pt-4 bg-white border-t border-gray-200">
         <Pressable
           onPress={handleContinue}
           className="rounded-2xl bg-emerald-500 py-4 items-center active:opacity-80"
