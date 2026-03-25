@@ -111,8 +111,11 @@ export default function ImportPreviewScreen() {
       try {
         console.log('Starting precheck - fetching all transactions...');
         const startTime = Date.now();
-        const existing = await getAllTransactionsForUser(user.id);
-        console.log(`Fetched ${existing.length} existing transactions in ${Date.now() - startTime}ms`);
+        const [existing, queuedTxs] = await Promise.all([
+          getAllTransactionsForUser(user.id),
+          getQueuedTransactions()
+        ]);
+        console.log(`Fetched ${existing.length} DB + ${queuedTxs.length} queued transactions in ${Date.now() - startTime}ms`);
         
         // Use a count map so each existing transaction can only match one import
         const existingKeyCounts = new Map<string, number>();
@@ -120,10 +123,30 @@ export default function ImportPreviewScreen() {
           const key = makeKeyFromDoc(doc);
           existingKeyCounts.set(key, (existingKeyCounts.get(key) || 0) + 1);
         }
+        // Also include queued (not-yet-synced) transactions for dedup
+        for (const q of queuedTxs) {
+          const key = makeKeyFromTransaction({
+            title: q.title,
+            subtitle: q.subtitle,
+            amount: Math.abs(q.amount),
+            kind: q.kind,
+            date: q.date,
+            categoryId: q.categoryId,
+            currency: q.currency,
+            displayName: q.displayName,
+          } as any);
+          existingKeyCounts.set(key, (existingKeyCounts.get(key) || 0) + 1);
+        }
         const dupKeys = new Set<string>();
         let unique = 0;
         let skipped = 0;
-        for (const t of transactions) {
+        for (let i = 0; i < transactions.length; i++) {
+          const t = transactions[i];
+          // Skip zero-amount transactions (consistent with actual import)
+          if (zeroAmountIndices.has(i)) {
+            skipped++;
+            continue;
+          }
           const key = makeKeyFromTransaction(t);
           const remaining = existingKeyCounts.get(key) || 0;
           if (remaining > 0) {
@@ -144,7 +167,7 @@ export default function ImportPreviewScreen() {
       }
     };
     runPrecheck();
-  }, [transactions, user?.id]);
+  }, [transactions, user?.id, zeroAmountIndices]);
 
   const handleImport = async () => {
     if (!user?.id) {
