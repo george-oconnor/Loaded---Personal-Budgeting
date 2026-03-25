@@ -267,8 +267,10 @@ export default function GenericCSVPreviewScreen() {
       setImportProgress({ current: finalTransactions.length, total: finalTransactions.length });
 
       // Track last import date for notifications
-      await saveLastImportDate('csv-import', 'CSV Import', 'other', user?.id);
-      console.log(`Import date tracked for CSV import`);
+      const accountKeyToTrack = selectedAccountKey || 'csv-import';
+      const accountNameToTrack = selectedAccountName || 'CSV Import';
+      await saveLastImportDate(accountKeyToTrack, accountNameToTrack, 'other', user?.id);
+      console.log(`Import date tracked for account: ${accountKeyToTrack}`);
 
       // Create/update account if we have account info
       if (selectedAccountKey && selectedAccountName) {

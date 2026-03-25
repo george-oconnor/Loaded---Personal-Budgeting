@@ -259,8 +259,10 @@ export default function PdfPreviewScreen() {
       setImportProgress({ current: finalTransactions.length, total: finalTransactions.length });
 
       // Track last import date for notifications
-      await saveLastImportDate("pdf-import", "PDF Import", "other", user?.id);
-      console.log("Import date tracked for PDF import");
+      const accountKeyToTrack = selectedAccountKey || 'pdf-import';
+      const accountNameToTrack = selectedAccountName || 'PDF Import';
+      await saveLastImportDate(accountKeyToTrack, accountNameToTrack, 'other', user?.id);
+      console.log(`Import date tracked for account: ${accountKeyToTrack}`);
 
       // Create/update account if we have account info
       if (selectedAccountKey && selectedAccountName) {
