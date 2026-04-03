@@ -66,7 +66,7 @@ export default function ImportPreviewScreen() {
   const [preSkippedCount, setPreSkippedCount] = useState(0);
   const [preUniqueCount, setPreUniqueCount] = useState(0);
   const [precheckDone, setPrecheckDone] = useState(false);
-  const [duplicateKeys, setDuplicateKeys] = useState<Set<string>>(new Set());
+  const [duplicateKeys, setDuplicateKeys] = useState<Set<number>>(new Set());
   const [parseStats, setParseStats] = useState<{
     totalRows: number;
     parsedRows: number;
@@ -137,7 +137,7 @@ export default function ImportPreviewScreen() {
           } as any);
           existingKeyCounts.set(key, (existingKeyCounts.get(key) || 0) + 1);
         }
-        const dupKeys = new Set<string>();
+        const dupIndices = new Set<number>();
         let unique = 0;
         let skipped = 0;
         for (let i = 0; i < transactions.length; i++) {
@@ -152,14 +152,14 @@ export default function ImportPreviewScreen() {
           if (remaining > 0) {
             existingKeyCounts.set(key, remaining - 1);
             skipped++;
-            dupKeys.add(key);
+            dupIndices.add(i);
             continue;
           }
           unique++;
         }
         setPreSkippedCount(skipped);
         setPreUniqueCount(unique);
-        setDuplicateKeys(dupKeys);
+        setDuplicateKeys(dupIndices);
         setPrecheckDone(true);
         console.log(`Precheck complete: ${unique} unique, ${skipped} duplicates`);
       } catch (e) {
@@ -533,11 +533,10 @@ export default function ImportPreviewScreen() {
     }
   };
 
-  const renderItem = ({ item }: { item: Transaction }) => {
+  const renderItem = ({ item }: { item: any }) => {
     const isExpense = item.kind === "expense";
     const isZeroAmount = item.amount === 0;
-    const key = makeKeyFromTransaction(item);
-    const isDuplicate = duplicateKeys.has(key);
+    const isDuplicate = duplicateKeys.has(item._origIndex);
     
     return (
       <View className={`rounded-2xl border p-4 mb-3 ${isDuplicate ? 'border-red-200 bg-red-50' : isZeroAmount ? 'border-gray-300 bg-gray-50' : 'border-gray-200 bg-white'}`}>
@@ -618,7 +617,7 @@ export default function ImportPreviewScreen() {
         </View>
 
         <FlatList
-          data={[...transactions].sort((a, b) => new Date(b.date).getTime() - new Date(a.date).getTime())}
+          data={transactions.map((t, i) => ({ ...t, _origIndex: i })).sort((a, b) => new Date(b.date).getTime() - new Date(a.date).getTime())}
           keyExtractor={(_, idx) => `tx-${idx}`}
           renderItem={renderItem}
           contentContainerStyle={{ padding: 20, paddingBottom: 140 }}

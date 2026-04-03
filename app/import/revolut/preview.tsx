@@ -62,7 +62,7 @@ export default function ImportPreviewScreen() {
   const [preSkippedCount, setPreSkippedCount] = useState(0);
   const [preUniqueCount, setPreUniqueCount] = useState(0);
   const [precheckDone, setPrecheckDone] = useState(false);
-  const [duplicateKeys, setDuplicateKeys] = useState<Set<string>>(new Set());
+  const [duplicateKeys, setDuplicateKeys] = useState<Set<number>>(new Set());
   const [parseStats, setParseStats] = useState<{
     totalRows: number;
     parsedRows: number;
@@ -104,23 +104,23 @@ export default function ImportPreviewScreen() {
           const key = makeKeyFromDoc(doc);
           existingKeyCounts.set(key, (existingKeyCounts.get(key) || 0) + 1);
         }
-        const dupKeys = new Set<string>();
+        const dupIndices = new Set<number>();
         let unique = 0;
         let skipped = 0;
-        for (const t of transactions) {
-          const key = makeKeyFromTransaction(t);
+        for (let i = 0; i < transactions.length; i++) {
+          const key = makeKeyFromTransaction(transactions[i]);
           const remaining = existingKeyCounts.get(key) || 0;
           if (remaining > 0) {
             existingKeyCounts.set(key, remaining - 1);
             skipped++;
-            dupKeys.add(key);
+            dupIndices.add(i);
             continue;
           }
           unique++;
         }
         setPreSkippedCount(skipped);
         setPreUniqueCount(unique);
-        setDuplicateKeys(dupKeys);
+        setDuplicateKeys(dupIndices);
         setPrecheckDone(true);
       } catch (e) {
         console.warn("Precheck dedupe failed:", e);
@@ -520,11 +520,10 @@ export default function ImportPreviewScreen() {
 
         {/* Transaction List */}
         <FlatList
-          data={[...transactions].sort((a, b) => new Date(b.date).getTime() - new Date(a.date).getTime())}
+          data={transactions.map((t, i) => ({ ...t, _origIndex: i })).sort((a, b) => new Date(b.date).getTime() - new Date(a.date).getTime())}
           keyExtractor={(_, index) => index.toString()}
           renderItem={({ item }) => {
-            const key = makeKeyFromTransaction(item);
-            const isDuplicate = duplicateKeys.has(key);
+            const isDuplicate = duplicateKeys.has(item._origIndex);
             return (
               <View className="px-5 py-3 border-b border-gray-100 flex-row items-center justify-between">
                 <View className="flex-1">
