@@ -179,6 +179,7 @@ export const useHomeStore = create<HomeState>((set, get) => ({
         displayName: t.displayName,
         account: t.account,
         matchedTransferId: t.matchedTransferId,
+        importedAt: t.importedAt,
       }));
 
       // Dedupe using same logic as all transactions screen (keeps latest occurrence)

@@ -236,6 +236,7 @@ export type TransactionDoc = {
   account?: string; // Which account this transaction relates to
   matchedTransferId?: string; // Linked transaction for internal transfers
   hideMerchantIcon?: boolean; // When true, use category icon instead of merchant icon
+  importedAt?: string; // ISO timestamp of when the transaction was imported
 };
 
 export type CategoryDoc = {
@@ -726,7 +727,8 @@ export async function createTransaction(
   account?: string, // Which account this transaction relates to
   matchedTransferId?: string, // Linked transaction for internal transfers
   hideMerchantIcon?: boolean, // When true, use category icon instead of merchant icon
-  importBatchId?: string // Unique identifier for the import batch
+  importBatchId?: string, // Unique identifier for the import batch
+  importedAt?: string // ISO timestamp of when the transaction was imported
 ) {
   if (!databaseId || !transactionsTableId) throw new Error("Appwrite env not configured");
   
@@ -768,6 +770,10 @@ export async function createTransaction(
 
   if (importBatchId !== undefined) {
     data.importBatchId = importBatchId;
+  }
+
+  if (importedAt !== undefined) {
+    data.importedAt = importedAt;
   }
   
   try {
@@ -870,6 +876,7 @@ export async function createBulkTransactions(
     displayName?: string;
     account?: string;
     matchedTransferId?: string;
+    importedAt?: string;
   }>,
   onProgress?: (current: number, total: number) => void,
   shouldCancel?: () => boolean,
@@ -911,7 +918,8 @@ export async function createBulkTransactions(
             tx.account,
             tx.matchedTransferId,
             (tx as any).hideMerchantIcon,
-            (tx as any).importBatchId
+            (tx as any).importBatchId,
+            tx.importedAt
           );
           return { success: true, index: i + batchIndex };
         } catch (err: any) {

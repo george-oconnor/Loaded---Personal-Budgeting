@@ -22,6 +22,7 @@ export type Transaction = {
   matchedTransferId?: string; // Linked transaction for internal transfers
   hideMerchantIcon?: boolean; // When true, use category icon instead of merchant icon
   importBatchId?: string; // Unique identifier for the import batch this transaction came from
+  importedAt?: string; // ISO timestamp of when the transaction was imported into the app
 };
 
 export type Summary = {

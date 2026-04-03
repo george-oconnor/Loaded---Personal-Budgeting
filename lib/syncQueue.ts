@@ -34,6 +34,7 @@ export interface QueuedTransaction {
   account?: string;
   matchedTransferId?: string;
   importBatchId?: string;
+  importedAt?: string;
 }
 
 const SYNC_QUEUE_KEY = 'budget_app_sync_queue';
@@ -68,18 +69,21 @@ export async function queueTransactionsForSync(
     account?: string;
     matchedTransferId?: string;
     importBatchId?: string;
+    importedAt?: string;
   }[]
 ): Promise<QueuedTransaction[]> {
   try {
     addBreadcrumb({ message: `Queueing ${transactions.length} transactions for sync`, category: 'sync', data: { userId, count: transactions.length } });
     const queue = await getQueuedTransactions();
+    const now = new Date().toISOString();
     const newTransactions: QueuedTransaction[] = transactions.map((t, i) => ({
       id: ID.unique(), // Generate valid Appwrite document ID
       ...t,
       userId,
       syncStatus: 'pending',
       attempts: 0,
-      createdAt: new Date().toISOString(),
+      createdAt: now,
+      importedAt: t.importedAt || (t.source && t.source !== 'manual' ? now : undefined),
     }));
 
     const updatedQueue = [...queue, ...newTransactions];

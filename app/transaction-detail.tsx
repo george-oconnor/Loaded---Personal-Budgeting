@@ -138,6 +138,7 @@ export default function TransactionDetailScreen() {
           matchedTransferId: (response as any).matchedTransferId,
           hideMerchantIcon: (response as any).hideMerchantIcon ?? false,
           importBatchId: (response as any).importBatchId,
+          importedAt: (response as any).importedAt,
         };
         
         isQueued = false;
@@ -846,6 +847,26 @@ export default function TransactionDetailScreen() {
             {!transaction.source && "Unknown"}
           </Text>
         </View>
+
+        {/* Imported At */}
+        {transaction.importedAt && (
+          <View className="mb-6 p-4 rounded-2xl bg-gray-50">
+            <Text className="text-gray-500 text-sm mb-2">Imported</Text>
+            <Text className="text-base font-semibold text-dark-100">
+              {new Date(transaction.importedAt).toLocaleDateString("en-US", {
+                weekday: "long",
+                year: "numeric",
+                month: "long",
+                day: "numeric",
+              })}{" "}
+              at{" "}
+              {new Date(transaction.importedAt).toLocaleTimeString("en-US", {
+                hour: "2-digit",
+                minute: "2-digit",
+              })}
+            </Text>
+          </View>
+        )}
 
         {/* Account */}
         <View className="mb-6 p-4 rounded-2xl bg-gray-50">
