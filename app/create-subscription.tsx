@@ -19,6 +19,7 @@ import {
   Image,
   Pressable,
   ScrollView,
+  Switch,
   Text,
   TextInput,
   View,
@@ -56,6 +57,7 @@ export default function CreateSubscriptionScreen() {
   const [frequency, setFrequency] = useState<RecurringFrequency>("monthly");
   const [amountStr, setAmountStr] = useState("");
   const [displayName, setDisplayName] = useState(merchantName ?? "");
+  const [isVariable, setIsVariable] = useState(false);
 
   const [iconUrl, setIconUrl] = useState<string | null>(null);
   const [iconFailed, setIconFailed] = useState(false);
@@ -99,7 +101,7 @@ export default function CreateSubscriptionScreen() {
       if (cancelled) return;
 
       const merchantLower = merchantName.toLowerCase();
-      const txs: Transaction[] = docs
+      const allMerchantTxs: Transaction[] = docs
         .filter((d: any) => {
           const name = (
             d.displayName ||
@@ -119,7 +121,13 @@ export default function CreateSubscriptionScreen() {
           currency: d.currency,
           displayName: d.displayName,
           account: d.account,
-        }))
+          isSubscription: d.isSubscription,
+          subscriptionId: d.subscriptionId,
+        }));
+
+      // Filter out transactions already claimed by another subscription
+      const txs = allMerchantTxs
+        .filter((tx) => !tx.subscriptionId)
         .sort(
           (a: Transaction, b: Transaction) =>
             new Date(b.date).getTime() - new Date(a.date).getTime()
@@ -190,10 +198,13 @@ export default function CreateSubscriptionScreen() {
     manualConfirmSubscription({
       merchantName: merchantName ?? "",
       displayName: displayName || merchantName || "",
+      name: displayName || merchantName || "",
       amount: amountInCents,
+      amountType: isVariable ? "variable" : "fixed",
       frequency,
       categoryId: categoryId ?? "",
       nextBillingDate: analysis?.nextExpectedDate,
+      transactionIds: Array.from(selectedIds),
     });
 
     router.back();
@@ -448,10 +459,10 @@ export default function CreateSubscriptionScreen() {
           </Text>
         </View>
 
-        {/* Display Name */}
+        {/* Subscription Name */}
         <View className="mb-4">
           <Text className="text-gray-500 text-xs mb-1.5 ml-1">
-            Display Name
+            Subscription Name
           </Text>
           <TextInput
             value={displayName}
@@ -480,6 +491,20 @@ export default function CreateSubscriptionScreen() {
               placeholderTextColor="#9CA3AF"
             />
           </View>
+        </View>
+
+        {/* Variable amount toggle */}
+        <View className="flex-row items-center justify-between mb-4 bg-gray-50 rounded-xl border border-gray-200 px-4 py-3">
+          <View className="flex-1 mr-3">
+            <Text className="text-dark-100 text-sm font-medium">Variable amount</Text>
+            <Text className="text-gray-400 text-xs mt-0.5">Amount changes each billing cycle</Text>
+          </View>
+          <Switch
+            value={isVariable}
+            onValueChange={setIsVariable}
+            trackColor={{ false: "#E5E7EB", true: "#FE8C00" }}
+            thumbColor="#FFFFFF"
+          />
         </View>
 
         {/* Frequency */}

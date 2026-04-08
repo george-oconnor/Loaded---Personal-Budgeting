@@ -1,7 +1,9 @@
 import TransactionListItem from "@/components/TransactionListItem";
 import { formatCurrency } from "@/lib/currencyFunctions";
 import { getMerchantIconUrl, getSuggestedMerchantIcon } from "@/lib/merchantIcons";
+import { getFrequencyLabel, type RecurringFrequency } from "@/lib/recurringPayments";
 import { useHomeStore } from "@/store/useHomeStore";
+import { useSubscriptionsStore, type ConfirmedSubscription } from "@/store/useSubscriptionsStore";
 import { useTransactionDetailStore } from "@/store/useTransactionDetailStore";
 import type { Transaction } from "@/types/type";
 import { Feather } from "@expo/vector-icons";
@@ -91,12 +93,17 @@ type AccountResult = {
   transactionCount: number;
 };
 
+type SubscriptionResult = {
+  type: "subscription";
+  subscription: ConfirmedSubscription;
+};
+
 type TransactionResult = {
   type: "transaction";
   transaction: Transaction;
 };
 
-type SearchItem = MerchantResult | AccountResult | TransactionResult;
+type SearchItem = MerchantResult | AccountResult | SubscriptionResult | TransactionResult;
 
 type SearchSection = {
   title: string;
@@ -106,6 +113,7 @@ type SearchSection = {
 
 export default function Search() {
   const { transactions, categories, summary } = useHomeStore();
+  const { confirmedSubscriptions } = useSubscriptionsStore();
   const { setSelectedTransactionId } = useTransactionDetailStore();
   const [query, setQuery] = useState("");
   const inputRef = useRef<TextInput>(null);
@@ -184,7 +192,19 @@ export default function Search() {
       })
       .map((t) => ({ type: "transaction" as const, transaction: t }));
 
+    // --- Subscriptions ---
+    const subscriptionResults: SubscriptionResult[] = confirmedSubscriptions
+      .filter((s) => {
+        const name = (s.name || s.displayName || s.merchantName || "").toLowerCase();
+        const merchant = (s.merchantName || "").toLowerCase();
+        return name.includes(q) || merchant.includes(q);
+      })
+      .map((s) => ({ type: "subscription" as const, subscription: s }));
+
     const result: SearchSection[] = [];
+    if (subscriptionResults.length > 0) {
+      result.push({ title: "Subscriptions", icon: "repeat", data: subscriptionResults });
+    }
     if (merchantResults.length > 0) {
       result.push({ title: "Merchants", icon: "shopping-bag", data: merchantResults });
     }
@@ -195,7 +215,7 @@ export default function Search() {
       result.push({ title: "Transactions", icon: "list", data: transactionResults });
     }
     return result;
-  }, [query, transactions, categories]);
+  }, [query, transactions, categories, confirmedSubscriptions]);
 
   const totalResults = useMemo(
     () => sections.reduce((sum, s) => sum + s.data.length, 0),
@@ -227,6 +247,14 @@ export default function Search() {
     []
   );
 
+  const handleSubscriptionPress = useCallback(
+    (sub: SubscriptionResult) => {
+      Keyboard.dismiss();
+      router.push({ pathname: "/subscription-detail", params: { subscriptionId: sub.subscription.id } });
+    },
+    []
+  );
+
   const renderItem = useCallback(
     ({ item }: { item: SearchItem }) => {
       if (item.type === "merchant") {
@@ -247,6 +275,32 @@ export default function Search() {
             <Text className="text-sm font-semibold text-dark-100">
               {formatCurrency(Math.abs(item.totalSpent) / 100, currency)}
             </Text>
+          </Pressable>
+        );
+      }
+
+      if (item.type === "subscription") {
+        const s = item.subscription;
+        const freq = s.frequency as RecurringFrequency;
+        const statusColor = s.status === "active" ? "#22C55E" : s.status === "paused" ? "#F59E0B" : "#EF4444";
+        return (
+          <Pressable
+            onPress={() => handleSubscriptionPress(item)}
+            className="flex-row items-center px-5 py-3 bg-white active:opacity-70"
+          >
+            <MerchantIcon name={s.displayName || s.merchantName} />
+            <View className="flex-1">
+              <Text className="font-semibold text-dark-100 text-base" numberOfLines={1}>
+                {s.name || s.displayName || s.merchantName}
+              </Text>
+              <View className="flex-row items-center mt-0.5">
+                <View className="w-1.5 h-1.5 rounded-full mr-1.5" style={{ backgroundColor: statusColor }} />
+                <Text className="text-xs text-gray-500">
+                  {getFrequencyLabel(freq)} · {formatCurrency(s.amount / 100, currency)}
+                </Text>
+              </View>
+            </View>
+            <Feather name="chevron-right" size={16} color="#9CA3AF" />
           </Pressable>
         );
       }
@@ -288,7 +342,7 @@ export default function Search() {
         />
       );
     },
-    [categories, currency, handleTransactionPress, handleMerchantPress, handleAccountPress]
+    [categories, currency, handleTransactionPress, handleMerchantPress, handleAccountPress, handleSubscriptionPress]
   );
 
   const renderSectionHeader = useCallback(
@@ -339,10 +393,10 @@ export default function Search() {
         <View className="flex-1 items-center justify-center px-8">
           <Feather name="search" size={48} color="#D1D5DB" />
           <Text className="text-lg font-quicksand-semibold text-gray-100 mt-4 text-center">
-            Search your transactions
+            Search your finances
           </Text>
           <Text className="text-sm text-gray-100 mt-1 text-center">
-            Search by merchant name, account, or category
+            Search by merchant, subscription, account, or category
           </Text>
         </View>
       ) : totalResults === 0 ? (
@@ -360,6 +414,7 @@ export default function Search() {
           sections={sections}
           keyExtractor={(item, index) => {
             if (item.type === "merchant") return `m-${item.name}`;
+            if (item.type === "subscription") return `s-${item.subscription.id}`;
             if (item.type === "account") return `a-${item.name}`;
             return `t-${item.transaction.id}-${index}`;
           }}

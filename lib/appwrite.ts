@@ -630,6 +630,16 @@ export async function getTransactionsInRangeAll(userId: string, startISO: string
   return all as unknown as TransactionDoc[];
 }
 
+export async function getTransactionsBySubscriptionId(subscriptionId: string): Promise<string[]> {
+  if (!databaseId || !transactionsTableId) throw new Error("Appwrite env not configured");
+
+  const res = await databases.listDocuments(databaseId, transactionsTableId, [
+    Query.equal("subscriptionId", subscriptionId),
+    Query.limit(500),
+  ]);
+  return (res.documents || []).map((d: any) => d.$id);
+}
+
 // Delete all transactions for a user
 export async function deleteAllTransactionsForUser(userId: string): Promise<{ deleted: number; failed: number }> {
   if (!databaseId || !transactionsTableId) throw new Error("Appwrite env not configured");
@@ -806,6 +816,8 @@ export async function updateTransaction(
     displayName?: string;
     matchedTransferId?: string;
     hideMerchantIcon?: boolean;
+    isSubscription?: boolean;
+    subscriptionId?: string;
   }
 ) {
   if (!databaseId || !transactionsTableId) throw new Error("Appwrite env not configured");
@@ -834,6 +846,14 @@ export async function updateTransaction(
 
   if (updates.hideMerchantIcon !== undefined) {
     data.hideMerchantIcon = updates.hideMerchantIcon;
+  }
+
+  if (updates.isSubscription !== undefined) {
+    data.isSubscription = updates.isSubscription;
+  }
+
+  if (updates.subscriptionId !== undefined) {
+    data.subscriptionId = updates.subscriptionId;
   }
   
   try {
@@ -1355,9 +1375,11 @@ export async function saveUserPreferences(
 
 export type SubscriptionDoc = {
   userId: string;
+  name: string;
   merchantName: string;
   displayName: string;
   amount: number;
+  amountType: "fixed" | "variable";
   frequency: string;
   categoryId: string;
   status: "active" | "paused" | "cancelled";

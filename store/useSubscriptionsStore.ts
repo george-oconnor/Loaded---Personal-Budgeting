@@ -2,8 +2,10 @@ import {
   createSubscription,
   deleteSubscription,
   getConfirmedSubscriptions,
+  getTransactionsBySubscriptionId,
   getTransactionsInRangeAll,
   updateSubscription,
+  updateTransaction,
   type SubscriptionDoc,
 } from "@/lib/appwrite";
 import { cancelSubscriptionReminder, scheduleSubscriptionReminder } from "@/lib/notifications";
@@ -19,6 +21,11 @@ const DISMISSED_KEY = "dismissed_subscriptions";
 
 export type ConfirmedSubscription = SubscriptionDoc & { id: string };
 
+export type EarlyPaymentInfo = ConfirmedSubscription & {
+  paidDate: string;
+  paidAmount: number;
+};
+
 type SubscriptionsState = {
   /** Algorithm-detected potential subscriptions (excluding confirmed & dismissed) */
   potentialSubscriptions: RecurringPayment[];
@@ -26,6 +33,8 @@ type SubscriptionsState = {
   confirmedSubscriptions: ConfirmedSubscription[];
   /** Merchant names the user has dismissed */
   dismissedMerchants: string[];
+  /** Subscriptions that appear to have been paid earlier than expected */
+  earlyPayments: EarlyPaymentInfo[];
   loading: boolean;
   error: string | null;
   lastFetched: number | null;
@@ -39,13 +48,20 @@ type SubscriptionsState = {
   manualConfirmSubscription: (params: {
     merchantName: string;
     displayName: string;
+    name?: string;
     amount: number;
+    amountType?: "fixed" | "variable";
     frequency: RecurringFrequency;
     categoryId: string;
     nextBillingDate?: string;
+    transactionIds?: string[];
   }) => void;
   /** Advance past billing dates and (re)schedule reminders for all active subscriptions */
   refreshSubscriptionReminders: () => Promise<void>;
+  /** Mark a subscription as paid for the current period, advancing to the next billing date */
+  markAsPaidForPeriod: (docId: string) => Promise<void>;
+  /** Dismiss an early payment detection without marking as paid */
+  dismissEarlyPayment: (docId: string) => void;
 };
 
 /** Map Appwrite docs to app Transaction type */
@@ -65,7 +81,21 @@ function mapDoc(doc: any): Transaction {
     account: doc.account,
     matchedTransferId: doc.matchedTransferId,
     hideMerchantIcon: doc.hideMerchantIcon,
+    isSubscription: doc.isSubscription,
+    subscriptionId: doc.subscriptionId,
   };
+}
+
+/** Tag (or untag) a batch of transactions with a subscription ID */
+async function tagTransactions(transactionIds: string[], subscriptionId: string | null) {
+  await Promise.allSettled(
+    transactionIds.map((txId) =>
+      updateTransaction(txId, {
+        isSubscription: subscriptionId !== null,
+        subscriptionId: subscriptionId ?? "",
+      })
+    )
+  );
 }
 
 async function loadDismissed(): Promise<string[]> {
@@ -85,6 +115,7 @@ export const useSubscriptionsStore = create<SubscriptionsState>((set, get) => ({
   potentialSubscriptions: [],
   confirmedSubscriptions: [],
   dismissedMerchants: [],
+  earlyPayments: [],
   loading: false,
   error: null,
   lastFetched: null,
@@ -131,10 +162,67 @@ export const useSubscriptionsStore = create<SubscriptionsState>((set, get) => ({
           !dismissedSet.has(rp.merchantName.toLowerCase())
       );
 
+      // Detect early payments: recent transactions matching confirmed subscriptions
+      // Only flag when the transaction falls within 7 days of the scheduled billing date (either side)
+      const now = new Date();
+
+      const previouslyDismissedEarlyKey = "dismissed_early_payments";
+      let dismissedEarlyIds: string[] = [];
+      try {
+        const raw = await AsyncStorage.getItem(previouslyDismissedEarlyKey);
+        dismissedEarlyIds = raw ? JSON.parse(raw) : [];
+      } catch { /* ignore */ }
+
+      const earlyPaid: EarlyPaymentInfo[] = [];
+      for (const sub of confirmed) {
+        if (sub.status !== "active" || !sub.nextBillingDate) continue;
+        if (dismissedEarlyIds.includes(sub.id)) continue;
+
+        const nextDate = new Date(sub.nextBillingDate);
+        const daysUntilBilling = Math.ceil((nextDate.getTime() - now.getTime()) / (1000 * 60 * 60 * 24));
+
+        // Only consider if billing date is within 7 days from now (but still in the future)
+        if (daysUntilBilling <= 0 || daysUntilBilling > 7) continue;
+
+        const merchantLower = sub.merchantName.toLowerCase();
+        const displayLower = (sub.displayName || "").toLowerCase();
+        const isVariable = sub.amountType === "variable";
+        const amountTolerance = Math.abs(sub.amount) * 0.15;
+
+        // Look for matching transactions within 7 days either side of the billing date
+        const windowStart = new Date(nextDate);
+        windowStart.setDate(windowStart.getDate() - 7);
+        const windowEnd = new Date(nextDate);
+        windowEnd.setDate(windowEnd.getDate() + 7);
+
+        const matchingTx = transactions.find((tx) => {
+          if (tx.kind !== "expense") return false;
+          const txDate = new Date(tx.date);
+          if (txDate < windowStart || txDate > windowEnd) return false;
+          // Must have already been paid (transaction date is before billing date)
+          if (txDate >= nextDate) return false;
+          const txName = (tx.displayName || tx.title || "").toLowerCase();
+          const nameMatch = txName.includes(merchantLower) || merchantLower.includes(txName)
+            || txName.includes(displayLower) || displayLower.includes(txName);
+          // Variable subscriptions match on name + date only; fixed also require amount match
+          const amountMatch = isVariable || Math.abs(Math.abs(tx.amount) - Math.abs(sub.amount)) <= amountTolerance;
+          return nameMatch && amountMatch;
+        });
+
+        if (matchingTx) {
+          earlyPaid.push({
+            ...sub,
+            paidDate: matchingTx.date,
+            paidAmount: Math.abs(matchingTx.amount),
+          });
+        }
+      }
+
       set({
         potentialSubscriptions: potential,
         confirmedSubscriptions: confirmed,
         dismissedMerchants: dismissed,
+        earlyPayments: earlyPaid,
         loading: false,
         lastFetched: Date.now(),
       });
@@ -159,9 +247,11 @@ export const useSubscriptionsStore = create<SubscriptionsState>((set, get) => ({
         {
           id: tempId,
           userId: user.id,
+          name: payment.displayName || payment.merchantName,
           merchantName: payment.merchantName,
           displayName: payment.displayName,
           amount: payment.amount,
+          amountType: "fixed" as const,
           frequency: payment.frequency,
           categoryId: payment.categoryId,
           status: "active",
@@ -174,9 +264,11 @@ export const useSubscriptionsStore = create<SubscriptionsState>((set, get) => ({
 
     // Persist in background, then swap temp ID with real one
     createSubscription(user.id, {
+      name: payment.displayName || payment.merchantName,
       merchantName: payment.merchantName,
       displayName: payment.displayName,
       amount: Math.round(payment.amount),
+      amountType: "fixed",
       frequency: payment.frequency,
       categoryId: payment.categoryId,
       status: "active",
@@ -200,6 +292,10 @@ export const useSubscriptionsStore = create<SubscriptionsState>((set, get) => ({
             currency,
             nextBillingDate: payment.nextExpectedDate,
           }).catch(() => {});
+        }
+        // Tag matched transactions with the subscription ID
+        if (payment.transactionIds?.length) {
+          tagTransactions(payment.transactionIds, doc.$id).catch(() => {});
         }
       })
       .catch((err) => {
@@ -237,6 +333,11 @@ export const useSubscriptionsStore = create<SubscriptionsState>((set, get) => ({
 
   removeConfirmed: async (docId: string) => {
     try {
+      // Untag transactions linked to this subscription
+      const txIds = await getTransactionsBySubscriptionId(docId).catch(() => [] as string[]);
+      if (txIds.length) {
+        tagTransactions(txIds, null).catch(() => {});
+      }
       await deleteSubscription(docId);
       set({
         confirmedSubscriptions: get().confirmedSubscriptions.filter((s) => s.id !== docId),
@@ -275,9 +376,11 @@ export const useSubscriptionsStore = create<SubscriptionsState>((set, get) => ({
         {
           id: tempId,
           userId: user.id,
+          name: params.name || params.displayName || params.merchantName,
           merchantName: params.merchantName,
           displayName: params.displayName,
           amount: params.amount,
+          amountType: params.amountType ?? "fixed",
           frequency: params.frequency,
           categoryId: params.categoryId,
           status: "active",
@@ -293,9 +396,11 @@ export const useSubscriptionsStore = create<SubscriptionsState>((set, get) => ({
     });
 
     createSubscription(user.id, {
+      name: params.name || params.displayName || params.merchantName,
       merchantName: params.merchantName,
       displayName: params.displayName,
       amount: Math.round(params.amount),
+      amountType: params.amountType ?? "fixed",
       frequency: params.frequency,
       categoryId: params.categoryId,
       status: "active",
@@ -318,6 +423,10 @@ export const useSubscriptionsStore = create<SubscriptionsState>((set, get) => ({
             currency,
             nextBillingDate: params.nextBillingDate,
           }).catch(() => {});
+        }
+        // Tag selected transactions with the subscription ID
+        if (params.transactionIds?.length) {
+          tagTransactions(params.transactionIds, doc.$id).catch(() => {});
         }
       })
       .catch((err) => {
@@ -357,6 +466,18 @@ export const useSubscriptionsStore = create<SubscriptionsState>((set, get) => ({
         if (!sub.id.startsWith("temp_")) {
           updateSubscription(sub.id, { nextBillingDate: newBillingDate }).catch(() => {});
         }
+        // Clear early payment dismissal so detection works for the new period
+        AsyncStorage.getItem("dismissed_early_payments")
+          .then((raw) => {
+            const dismissed: string[] = raw ? JSON.parse(raw) : [];
+            if (dismissed.includes(sub.id)) {
+              AsyncStorage.setItem(
+                "dismissed_early_payments",
+                JSON.stringify(dismissed.filter((id) => id !== sub.id))
+              );
+            }
+          })
+          .catch(() => {});
       }
 
       // Schedule the reminder (replaces any existing one for this sub)
@@ -371,5 +492,68 @@ export const useSubscriptionsStore = create<SubscriptionsState>((set, get) => ({
         }).catch(() => {});
       }
     }
+  },
+
+  markAsPaidForPeriod: async (docId: string) => {
+    const sub = get().confirmedSubscriptions.find((s) => s.id === docId);
+    if (!sub || !sub.nextBillingDate) return;
+
+    // Advance to the next billing date in the sequence
+    const newBillingDate = estimateNextDate(sub.nextBillingDate, sub.frequency as RecurringFrequency);
+
+    // Update locally
+    set({
+      confirmedSubscriptions: get().confirmedSubscriptions.map((s) =>
+        s.id === docId ? { ...s, nextBillingDate: newBillingDate } : s
+      ),
+      // Remove from early payments if it was there
+      earlyPayments: get().earlyPayments.filter((s) => s.id !== docId),
+    });
+
+    // Persist to DB
+    if (!docId.startsWith("temp_")) {
+      try {
+        await updateSubscription(docId, { nextBillingDate: newBillingDate });
+      } catch (err) {
+        captureException(err as Error);
+      }
+
+      // Cancel old reminder and schedule new one for the advanced date
+      const currency = useHomeStore.getState().summary?.currency ?? "EUR";
+      cancelSubscriptionReminder(docId).catch(() => {});
+      scheduleSubscriptionReminder({
+        subscriptionId: docId,
+        merchantName: sub.displayName || sub.merchantName,
+        amount: sub.amount,
+        currency,
+        nextBillingDate: newBillingDate,
+      }).catch(() => {});
+    }
+
+    // Also clear from dismissed early list so it can be detected next period
+    try {
+      const raw = await AsyncStorage.getItem("dismissed_early_payments");
+      const dismissed: string[] = raw ? JSON.parse(raw) : [];
+      await AsyncStorage.setItem(
+        "dismissed_early_payments",
+        JSON.stringify(dismissed.filter((id) => id !== docId))
+      );
+    } catch { /* ignore */ }
+  },
+
+  dismissEarlyPayment: (docId: string) => {
+    set({
+      earlyPayments: get().earlyPayments.filter((s) => s.id !== docId),
+    });
+    // Persist dismissal so it doesn't re-appear until next period
+    AsyncStorage.getItem("dismissed_early_payments")
+      .then((raw) => {
+        const dismissed: string[] = raw ? JSON.parse(raw) : [];
+        if (!dismissed.includes(docId)) {
+          dismissed.push(docId);
+          AsyncStorage.setItem("dismissed_early_payments", JSON.stringify(dismissed));
+        }
+      })
+      .catch(() => {});
   },
 }));

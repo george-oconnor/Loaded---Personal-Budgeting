@@ -23,6 +23,8 @@ export type Transaction = {
   hideMerchantIcon?: boolean; // When true, use category icon instead of merchant icon
   importBatchId?: string; // Unique identifier for the import batch this transaction came from
   importedAt?: string; // ISO timestamp of when the transaction was imported into the app
+  isSubscription?: boolean; // Whether this transaction is part of a subscription
+  subscriptionId?: string; // Links this transaction to a confirmed subscription
 };
 
 export type Summary = {

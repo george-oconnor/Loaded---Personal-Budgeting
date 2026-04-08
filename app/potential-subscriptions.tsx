@@ -238,6 +238,17 @@ export default function PotentialSubscriptionsScreen() {
             Dismissed items won&apos;t appear again.
           </Text>
         </View>
+
+        {/* Manual subscription button */}
+        <Pressable
+          onPress={() => router.push("/find-subscription")}
+          className="flex-row items-center justify-center bg-primary/10 rounded-2xl py-3.5 mb-5 active:bg-primary/20"
+        >
+          <Feather name="plus-circle" size={16} color="#FE8C00" />
+          <Text className="text-primary text-sm font-semibold ml-2">
+            Find a subscription payment manually
+          </Text>
+        </Pressable>
       </ScrollView>
     </SafeAreaView>
   );

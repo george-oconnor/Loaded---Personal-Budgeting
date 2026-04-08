@@ -162,6 +162,8 @@ export const useHomeStore = create<HomeState>((set, get) => ({
         account: (t as any).account,
         matchedTransferId: (t as any).matchedTransferId,
         hideMerchantIcon: (t as any).hideMerchantIcon,
+        isSubscription: (t as any).isSubscription,
+        subscriptionId: (t as any).subscriptionId,
       }));
 
       // Add queued transactions to the list (exclude completed)
