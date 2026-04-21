@@ -253,6 +253,39 @@ export default function AibImportPasteScreen() {
           currency = tx.currency;
         }
       }
+
+      // If the most recent date has no balance figures, check whether applying its
+      // transactions to the last known balance results in zero (AIB omits the balance
+      // column when the closing balance is 0.00).
+      if (finalBalanceCents !== undefined && sortedByDate.length > 0) {
+        const mostRecentDateKey = parseAibDate(sortedByDate[sortedByDate.length - 1].date)
+          .toISOString().split('T')[0];
+
+        const mostRecentTxs = sortedByDate.filter(tx => {
+          const d = parseAibDate(tx.date);
+          return !isNaN(d.getTime()) && d.toISOString().split('T')[0] === mostRecentDateKey;
+        });
+
+        const mostRecentDateHasBalance = mostRecentTxs.some(tx => {
+          const balStr = (tx.balance || '').toString().trim();
+          if (!balStr) return false;
+          return !Number.isNaN(parseFloat(balStr.replace(/,/g, '')));
+        });
+
+        if (!mostRecentDateHasBalance) {
+          // Apply each transaction on the most recent date to the last known balance.
+          // Amounts are already signed: negative = debit, positive = credit.
+          let runningBalance = finalBalanceCents / 100;
+          for (const tx of mostRecentTxs) {
+            runningBalance += tx.amount;
+          }
+          if (Math.abs(runningBalance) < 0.005) {
+            console.log(`Most recent date (${mostRecentDateKey}) has no balance; inferred closing balance is 0.00`);
+            finalBalanceCents = 0;
+          }
+        }
+      }
+
       console.log(`Step 4 complete: Balance extraction in ${Date.now() - balanceStart}ms`);
 
       console.log('Step 5: Caching transactions...');
