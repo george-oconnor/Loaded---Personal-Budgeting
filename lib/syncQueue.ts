@@ -35,6 +35,7 @@ export interface QueuedTransaction {
   matchedTransferId?: string;
   importBatchId?: string;
   importedAt?: string;
+  originalAmount?: number;
 }
 
 const SYNC_QUEUE_KEY = 'budget_app_sync_queue';
@@ -70,6 +71,7 @@ export async function queueTransactionsForSync(
     matchedTransferId?: string;
     importBatchId?: string;
     importedAt?: string;
+    originalAmount?: number;
   }[]
 ): Promise<QueuedTransaction[]> {
   try {

@@ -25,6 +25,7 @@ export type Transaction = {
   importedAt?: string; // ISO timestamp of when the transaction was imported into the app
   isSubscription?: boolean; // Whether this transaction is part of a subscription
   subscriptionId?: string; // Links this transaction to a confirmed subscription
+  originalAmount?: number; // The amount at the time of import, used for duplicate detection
 };
 
 export type Summary = {
