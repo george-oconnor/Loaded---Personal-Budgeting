@@ -44,8 +44,13 @@ const normalizeDateForKey = (value: string) => {
 };
 const makeKeyFromTransaction = (t: Transaction) =>
   `${normalizeText(t.title)}|${Math.abs(t.amount)}|${t.kind}|${normalizeDateForKey(t.date)}`;
-const makeKeyFromDoc = (doc: any) =>
-  `${normalizeText(doc.title || "")}|${Math.abs(Number(doc.amount))}|${doc.kind}|${normalizeDateForKey(doc.date || "")}`;
+const makeKeyFromDoc = (doc: any) => {
+  // Use originalAmount (pre-edit) if present, so user edits don't break deduplication
+  const amount = doc.originalAmount !== undefined && doc.originalAmount !== null
+    ? Math.abs(Number(doc.originalAmount))
+    : Math.abs(Number(doc.amount));
+  return `${normalizeText(doc.title || "")}|${amount}|${doc.kind}|${normalizeDateForKey(doc.date || "")}`;
+};
 
 export default function PdfPreviewScreen() {
   const { user } = useSessionStore();
@@ -218,6 +223,7 @@ export default function PdfPreviewScreen() {
           displayName: tx.title,
           account: tx.account || "PDF Import",
           importBatchId,
+          originalAmount: tx.amount, // Preserve original imported amount for future deduplication
         }))
       );
 

@@ -49,8 +49,13 @@ const normalizeDateForKey = (value: string) => {
 // Compare dates by day only (not exact timestamp) to catch duplicates reliably
 const makeKeyFromTransaction = (t: Transaction) =>
   `${normalizeText(t.title)}|${Math.abs(t.amount)}|${t.kind}|${normalizeDateForKey(t.date)}`;
-const makeKeyFromDoc = (doc: any) =>
-  `${normalizeText(doc.title || "")}|${Math.abs(Number(doc.amount))}|${doc.kind}|${normalizeDateForKey(doc.date || "")}`;
+const makeKeyFromDoc = (doc: any) => {
+  // Use originalAmount (pre-edit) if present, so user edits don't break deduplication
+  const amount = doc.originalAmount !== undefined && doc.originalAmount !== null
+    ? Math.abs(Number(doc.originalAmount))
+    : Math.abs(Number(doc.amount));
+  return `${normalizeText(doc.title || "")}|${amount}|${doc.kind}|${normalizeDateForKey(doc.date || "")}`;
+};
 
 export default function ImportPreviewScreen() {
   const { user } = useSessionStore();
@@ -310,6 +315,7 @@ export default function ImportPreviewScreen() {
           displayName: tx.displayName || tx.title, // Explicitly ensure displayName is set
           account: tx.account, // Use the account resolved from transaction details
           importBatchId, // Add the batch ID to all transactions in this import
+          originalAmount: tx.amount, // Preserve original imported amount for future deduplication
         }))
       );
       
