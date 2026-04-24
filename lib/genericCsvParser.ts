@@ -211,7 +211,20 @@ export function parseGenericCSV(csvContent: string, mapping: ColumnMapping): Gen
     }
 
     const fields = parseCSVLine(line);
-    
+
+    // Defensive: skip rows whose any field is exactly a known "not actually charged"
+    // status marker (e.g. a Revolut export pasted through the generic flow). These
+    // rows have no balance impact and would otherwise distort the balance history.
+    const hasReversedStatus = fields.some((f) => {
+      const v = (f || '').trim().toUpperCase();
+      return v === 'REVERTED' || v === 'DECLINED' || v === 'FAILED';
+    });
+    if (hasReversedStatus) {
+      skipped++;
+      skippedDetails.push({ line: i + 1, reason: 'Skipped reverted/declined/failed transaction' });
+      continue;
+    }
+
     try {
       // Extract date
       const dateStr = mapping.dateColumn >= 0 ? fields[mapping.dateColumn]?.trim() : '';

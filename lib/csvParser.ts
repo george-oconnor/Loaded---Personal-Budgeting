@@ -129,6 +129,16 @@ export function parseRevolutCSV(csvContent: string): RevolutParseResult {
       const state = stateIdx >= 0 ? fields[stateIdx]?.trim() || '' : '';
       const balance = balanceIdx >= 0 ? fields[balanceIdx]?.trim() || '' : '';
 
+      // Skip rows that were never charged (REVERTED) or refused (DECLINED/FAILED).
+      // These have no Balance value and would inflate the historical balance walk-back
+      // if treated as real transactions.
+      const stateUpper = state.toUpperCase();
+      if (stateUpper === 'REVERTED' || stateUpper === 'DECLINED' || stateUpper === 'FAILED') {
+        skipped++;
+        skippedDetails.push({ line: i + 1, reason: `Skipped ${stateUpper} transaction` });
+        continue;
+      }
+
       transactions.push({
         type,
         product,

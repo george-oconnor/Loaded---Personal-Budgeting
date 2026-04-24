@@ -3,6 +3,8 @@ import { ID, Permission, Query, Role } from 'appwrite';
 import { databases, getCategories } from './appwrite';
 
 const MERCHANT_MAPPINGS_KEY = 'budget_app_merchant_categories';
+const CATEGORIES_PERSIST_KEY = 'budget_app_categories_cache_v1';
+const LEARNED_MAPPINGS_PERSIST_KEY = 'budget_app_learned_mappings_cache_v1';
 const databaseId = process.env.EXPO_PUBLIC_APPWRITE_DATABASE_ID;
 const merchantVotesTableId = 
   process.env.EXPO_PUBLIC_APPWRITE_TABLE_MERCHANT_VOTES ||
@@ -12,6 +14,115 @@ const merchantVotesTableId =
 // Learned merchant-to-category mappings
 interface MerchantMapping {
   [merchantKey: string]: string; // merchantKey -> categoryId
+}
+
+// Module-level cache for categories to avoid hammering Appwrite
+type CategoryList = Awaited<ReturnType<typeof getCategories>>;
+let cachedCategories: CategoryList | null = null;
+let cachedCategoriesAt = 0;
+let inflightCategories: Promise<CategoryList> | null = null;
+let categoriesCooldownUntil = 0;
+let lastCategoriesErrorLogAt = 0;
+let persistedCategoriesLoaded = false;
+const CATEGORIES_TTL_MS = 5 * 60 * 1000; // 5 minutes
+const RATE_LIMIT_COOLDOWN_MS = 60 * 1000; // 60 seconds
+
+function isRateLimited(err: any): boolean {
+  const msg = String(err?.message || err || '').toLowerCase();
+  return msg.includes('too many requests') || msg.includes('429') || msg.includes('rate limit');
+}
+
+async function loadPersistedCategoriesOnce() {
+  if (persistedCategoriesLoaded) return;
+  persistedCategoriesLoaded = true;
+  try {
+    const raw = await AsyncStorage.getItem(CATEGORIES_PERSIST_KEY);
+    if (raw && !cachedCategories) {
+      const parsed = JSON.parse(raw);
+      if (Array.isArray(parsed) && parsed.length > 0) {
+        cachedCategories = parsed as CategoryList;
+        // Treat persisted as stale-but-usable; do not set cachedCategoriesAt to now
+      }
+    }
+  } catch {
+    // ignore
+  }
+}
+
+async function getCategoriesCached(): Promise<CategoryList> {
+  const now = Date.now();
+  if (cachedCategories && now - cachedCategoriesAt < CATEGORIES_TTL_MS) {
+    return cachedCategories;
+  }
+  // If we're cooling down after a rate limit, return whatever we have (in-memory or persisted)
+  if (now < categoriesCooldownUntil) {
+    if (cachedCategories) return cachedCategories;
+    await loadPersistedCategoriesOnce();
+    return cachedCategories ?? [];
+  }
+  if (inflightCategories) return inflightCategories;
+
+  // Assign inflight synchronously BEFORE any await to prevent races
+  inflightCategories = (async (): Promise<CategoryList> => {
+    await loadPersistedCategoriesOnce();
+    try {
+      const cats = await getCategories();
+      cachedCategories = cats;
+      cachedCategoriesAt = Date.now();
+      try {
+        await AsyncStorage.setItem(CATEGORIES_PERSIST_KEY, JSON.stringify(cats));
+      } catch {
+        // ignore persistence failures
+      }
+      return cats;
+    } catch (err) {
+      if (isRateLimited(err)) {
+        categoriesCooldownUntil = Date.now() + RATE_LIMIT_COOLDOWN_MS;
+        const nowTs = Date.now();
+        if (nowTs - lastCategoriesErrorLogAt > RATE_LIMIT_COOLDOWN_MS) {
+          lastCategoriesErrorLogAt = nowTs;
+          console.warn('Categories fetch rate-limited; using cached list for ~60s');
+        }
+      } else {
+        console.error('Error fetching categories:', err);
+      }
+      return cachedCategories ?? [];
+    } finally {
+      inflightCategories = null;
+    }
+  })();
+  return inflightCategories;
+}
+
+export function invalidateCategoriesCache() {
+  cachedCategories = null;
+  cachedCategoriesAt = 0;
+  categoriesCooldownUntil = 0;
+}
+
+// Module-level cache for learned merchant mappings
+let cachedLearnedMappings: MerchantMapping | null = null;
+let cachedLearnedMappingsAt = 0;
+let inflightLearnedMappings: Promise<MerchantMapping> | null = null;
+let learnedMappingsCooldownUntil = 0;
+let lastLearnedMappingsErrorLogAt = 0;
+let persistedMappingsLoaded = false;
+const LEARNED_MAPPINGS_TTL_MS = 5 * 60 * 1000;
+
+async function loadPersistedMappingsOnce() {
+  if (persistedMappingsLoaded) return;
+  persistedMappingsLoaded = true;
+  try {
+    const raw = await AsyncStorage.getItem(LEARNED_MAPPINGS_PERSIST_KEY);
+    if (raw && !cachedLearnedMappings) {
+      const parsed = JSON.parse(raw);
+      if (parsed && typeof parsed === 'object') {
+        cachedLearnedMappings = parsed as MerchantMapping;
+      }
+    }
+  } catch {
+    // ignore
+  }
 }
 
 /**
@@ -62,9 +173,56 @@ function findMatchingCategory(
 }
 
 /**
- * Get learned merchant mappings from database (crowd-sourced, most popular category wins)
+ * Get learned merchant mappings (with in-memory + AsyncStorage caching and rate-limit cooldown)
  */
 async function getLearnedMappings(): Promise<MerchantMapping> {
+  const now = Date.now();
+  if (cachedLearnedMappings && now - cachedLearnedMappingsAt < LEARNED_MAPPINGS_TTL_MS) {
+    return cachedLearnedMappings;
+  }
+  if (now < learnedMappingsCooldownUntil) {
+    if (cachedLearnedMappings) return cachedLearnedMappings;
+    await loadPersistedMappingsOnce();
+    return cachedLearnedMappings ?? {};
+  }
+  if (inflightLearnedMappings) return inflightLearnedMappings;
+
+  // Assign inflight synchronously BEFORE any await to prevent races
+  inflightLearnedMappings = (async (): Promise<MerchantMapping> => {
+    await loadPersistedMappingsOnce();
+    try {
+      const m = await fetchLearnedMappings();
+      cachedLearnedMappings = m;
+      cachedLearnedMappingsAt = Date.now();
+      try {
+        await AsyncStorage.setItem(LEARNED_MAPPINGS_PERSIST_KEY, JSON.stringify(m));
+      } catch {
+        // ignore
+      }
+      return m;
+    } catch (err) {
+      if (isRateLimited(err)) {
+        learnedMappingsCooldownUntil = Date.now() + RATE_LIMIT_COOLDOWN_MS;
+        const nowTs = Date.now();
+        if (nowTs - lastLearnedMappingsErrorLogAt > RATE_LIMIT_COOLDOWN_MS) {
+          lastLearnedMappingsErrorLogAt = nowTs;
+          console.warn('Merchant mappings rate-limited; using cached mappings for ~60s');
+        }
+      } else {
+        console.error('Error loading merchant mappings:', err);
+      }
+      return cachedLearnedMappings ?? {};
+    } finally {
+      inflightLearnedMappings = null;
+    }
+  })();
+  return inflightLearnedMappings;
+}
+
+/**
+ * Get learned merchant mappings from database (crowd-sourced, most popular category wins)
+ */
+async function fetchLearnedMappings(): Promise<MerchantMapping> {
   try {
     // Try to get from database first (crowd-sourced)
     if (!databaseId || !merchantVotesTableId) {
@@ -142,6 +300,10 @@ async function getLearnedMappings(): Promise<MerchantMapping> {
     return mappings;
   } catch (error) {
     const msg = String((error as any)?.message || error);
+    // Let rate-limit errors bubble up so the wrapper can apply cooldown
+    if (isRateLimited(error)) {
+      throw error;
+    }
     // Reduce noise for transient failures; still fallback gracefully
     if (msg.includes('503') || msg.toLowerCase().includes('timeout')) {
       console.warn('Merchant mappings temporarily unavailable, using local cache');
@@ -224,7 +386,7 @@ export async function learnMerchantCategory(merchantName: string, categoryId: st
  */
 async function getCategoryIdBySlug(slug: string): Promise<string> {
   try {
-    const categories = await getCategories();
+    const categories = await getCategoriesCached();
     const category = categories.find(c => c.slug === slug || c.name.toLowerCase() === slug);
     
     if (category) {
@@ -235,7 +397,9 @@ async function getCategoryIdBySlug(slug: string): Promise<string> {
     const general = categories.find(c => c.slug === 'general' || c.name.toLowerCase() === 'general');
     return general ? general.$id : '';
   } catch (error) {
-    console.error('Error mapping category slug:', error);
+    if (!isRateLimited(error)) {
+      console.error('Error mapping category slug:', error);
+    }
     return '';
   }
 }
@@ -425,7 +589,7 @@ export async function batchCategorizeTransactions(
 ): Promise<string[]> {
   // Fetch categories and learned mappings once for all transactions
   const [categories, learnedMappings] = await Promise.all([
-    getCategories(),
+    getCategoriesCached(),
     getLearnedMappings()
   ]);
 
@@ -470,7 +634,7 @@ export async function batchCategorizeTransactions(
  */
 export async function ensureUncategorizedCategory(): Promise<string> {
   try {
-    const categories = await getCategories();
+    const categories = await getCategoriesCached();
     const uncategorized = categories.find(c => c.slug === 'uncategorized' || c.name.toLowerCase() === 'uncategorized');
     
     if (uncategorized) {
@@ -492,7 +656,7 @@ export async function ensureUncategorizedCategory(): Promise<string> {
  */
 export async function getTransferCategoryId(): Promise<string> {
   try {
-    const categories = await getCategories();
+    const categories = await getCategoriesCached();
     const transfer = categories.find(c => c.slug === 'transfer' || c.name.toLowerCase() === 'transfer');
     
     if (transfer) {

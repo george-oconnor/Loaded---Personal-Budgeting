@@ -228,6 +228,41 @@ export async function cleanupSyncQueue(userId: string): Promise<void> {
 }
 
 /**
+ * Reset transactions that are "stuck" — either marked syncing (no active sync ever
+ * picked them up) or failed with attempts >= MAX_RETRY_ATTEMPTS so they no longer
+ * qualify for the auto-sync filter. Returns the number of transactions reset.
+ *
+ * The tray's pending count includes any failed transaction, but
+ * startSyncingTransactions only retries failed ones while attempts < MAX. That
+ * mismatch leaves transactions visible as "queued" forever with no sync attempt
+ * and no error. Call this before kicking off a sync to self-heal.
+ */
+export async function retryStuckTransactions(): Promise<number> {
+  try {
+    const queue = await getQueuedTransactions();
+    let resetCount = 0;
+    const updated = queue.map((t) => {
+      if (t.syncStatus === 'syncing') {
+        resetCount++;
+        return { ...t, syncStatus: 'pending' as const };
+      }
+      if (t.syncStatus === 'failed' && t.attempts >= MAX_RETRY_ATTEMPTS) {
+        resetCount++;
+        return { ...t, syncStatus: 'pending' as const, attempts: 0, error: undefined };
+      }
+      return t;
+    });
+    if (resetCount > 0) {
+      await AsyncStorage.setItem(SYNC_QUEUE_KEY, JSON.stringify(updated));
+    }
+    return resetCount;
+  } catch (error) {
+    console.error('Error retrying stuck transactions:', error);
+    return 0;
+  }
+}
+
+/**
  * Initialize sync status on app start - clears stuck syncing status
  */
 export async function initializeSyncStatus(): Promise<void> {
