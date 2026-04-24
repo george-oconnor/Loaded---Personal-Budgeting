@@ -740,7 +740,9 @@ export async function createTransaction(
   hideMerchantIcon?: boolean, // When true, use category icon instead of merchant icon
   importBatchId?: string, // Unique identifier for the import batch
   importedAt?: string, // ISO timestamp of when the transaction was imported
-  originalAmount?: number // The amount at the time of import, used for duplicate detection
+  originalAmount?: number, // The amount at the time of import, used for duplicate detection
+  isSubscription?: boolean,
+  subscriptionId?: string
 ) {
   if (!databaseId || !transactionsTableId) throw new Error("Appwrite env not configured");
   
@@ -790,6 +792,14 @@ export async function createTransaction(
 
   if (originalAmount !== undefined) {
     data.originalAmount = originalAmount;
+  }
+
+  if (isSubscription !== undefined) {
+    data.isSubscription = isSubscription;
+  }
+
+  if (subscriptionId !== undefined) {
+    data.subscriptionId = subscriptionId;
   }
   
   try {
@@ -904,6 +914,8 @@ export async function createBulkTransactions(
     matchedTransferId?: string;
     importedAt?: string;
     originalAmount?: number;
+    isSubscription?: boolean;
+    subscriptionId?: string;
   }>,
   onProgress?: (current: number, total: number) => void,
   shouldCancel?: () => boolean,
@@ -947,7 +959,9 @@ export async function createBulkTransactions(
             (tx as any).hideMerchantIcon,
             (tx as any).importBatchId,
             tx.importedAt,
-            tx.originalAmount
+            tx.originalAmount,
+            tx.isSubscription,
+            tx.subscriptionId
           );
           return { success: true, index: i + batchIndex };
         } catch (err: any) {

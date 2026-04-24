@@ -1,10 +1,11 @@
 import { saveBalanceSnapshot, updateAccountBalance, upsertBalanceRemote } from "@/lib/accountBalances";
-import { getAllTransactionsForUser, updateTransaction } from "@/lib/appwrite";
+import { getAllTransactionsForUser, getConfirmedSubscriptions, updateTransaction } from "@/lib/appwrite";
 import { getTransferCategoryId } from "@/lib/categorization";
 import { detectTransferPairs, ParsedTransaction } from "@/lib/csvParser";
 import { formatCurrency } from "@/lib/currencyFunctions";
 import { saveLastImportDate } from "@/lib/notifications";
 import { queueTransactionsForSync } from "@/lib/syncQueue";
+import { matchTransactionToSubscription } from "@/lib/subscriptionMatcher";
 import { useSessionStore } from "@/store/useSessionStore";
 import { Feather } from "@expo/vector-icons";
 import { ID } from "appwrite";
@@ -217,17 +218,27 @@ export default function GenericCSVPreviewScreen() {
       // Save balance snapshot before queueing transactions
       await saveBalanceSnapshot(user.id, importBatchId);
       
+      // Fetch confirmed subscriptions so we can auto-link matching imported transactions
+      const confirmedSubs = await getConfirmedSubscriptions(user.id).catch((e) => {
+        console.warn('Failed to fetch confirmed subscriptions for matching:', e);
+        return [] as Awaited<ReturnType<typeof getConfirmedSubscriptions>>;
+      });
+
       // Queue transactions locally
       const queuedTxs = await queueTransactionsForSync(
         user.id, 
-        finalTransactions.map(tx => ({ 
-          ...tx, 
-          source: "other_import" as const,
-          displayName: tx.title,
-          account: tx.account || 'CSV Import',
-          importBatchId,
-          originalAmount: tx.amount, // Preserve original imported amount for future deduplication
-        }))
+        finalTransactions.map(tx => {
+          const subId = matchTransactionToSubscription(tx, confirmedSubs);
+          return { 
+            ...tx, 
+            source: "other_import" as const,
+            displayName: tx.title,
+            account: tx.account || 'CSV Import',
+            importBatchId,
+            originalAmount: tx.amount, // Preserve original imported amount for future deduplication
+            ...(subId ? { isSubscription: true, subscriptionId: subId } : {}),
+          };
+        })
       );
 
       // Link internal transfer pairs after sync

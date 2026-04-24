@@ -1,9 +1,10 @@
 import { saveBalanceSnapshot, updateAccountBalance, upsertBalanceRemote } from "@/lib/accountBalances";
-import { getAllTransactionsForUser, updateTransaction } from "@/lib/appwrite";
+import { getAllTransactionsForUser, getConfirmedSubscriptions, updateTransaction } from "@/lib/appwrite";
 import { getTransferCategoryId } from "@/lib/categorization";
 import { detectAibTransfers, detectCrossBankTransfers } from "@/lib/csvParser";
 import { saveLastImportDate } from "@/lib/notifications";
 import { getQueuedTransactions, queueTransactionsForSync, updateQueuedTransactions } from "@/lib/syncQueue";
+import { matchTransactionToSubscription } from "@/lib/subscriptionMatcher";
 import { useHomeStore } from "@/store/useHomeStore";
 import { useSessionStore } from "@/store/useSessionStore";
 import { ID } from "appwrite";
@@ -422,17 +423,27 @@ export default function ImportPreviewScreen() {
       
       // Save balance snapshot before queueing transactions
       await saveBalanceSnapshot(user.id, importBatchId);
+
+      // Fetch confirmed subscriptions so we can auto-link matching imported transactions
+      const confirmedSubs = await getConfirmedSubscriptions(user.id).catch((e) => {
+        console.warn('Failed to fetch confirmed subscriptions for matching:', e);
+        return [] as Awaited<ReturnType<typeof getConfirmedSubscriptions>>;
+      });
       
       const queuedTxs = await queueTransactionsForSync(
         user.id, 
-        finalTransactions.map(tx => ({ 
-          ...tx, 
-          source: "aib_import" as const,
-          displayName: tx.displayName || tx.title, // Explicitly ensure displayName is set
-          account: accountName,
-          importBatchId, // Add the batch ID to all transactions in this import
-          originalAmount: tx.amount, // Preserve original imported amount for future deduplication
-        }))
+        finalTransactions.map(tx => {
+          const subId = matchTransactionToSubscription(tx, confirmedSubs);
+          return {
+            ...tx, 
+            source: "aib_import" as const,
+            displayName: tx.displayName || tx.title, // Explicitly ensure displayName is set
+            account: accountName,
+            importBatchId, // Add the batch ID to all transactions in this import
+            originalAmount: tx.amount, // Preserve original imported amount for future deduplication
+            ...(subId ? { isSubscription: true, subscriptionId: subId } : {}),
+          };
+        })
       );
       
       // Update existing transactions with matched transfer IDs

@@ -1,10 +1,11 @@
 import { saveBalanceSnapshot } from "@/lib/accountBalances";
-import { getAllTransactionsForUser, updateTransaction } from "@/lib/appwrite";
+import { getAllTransactionsForUser, getConfirmedSubscriptions, updateTransaction } from "@/lib/appwrite";
 import { getTransferCategoryId } from "@/lib/categorization";
 import { detectCrossBankTransfers, detectTransferPairs } from "@/lib/csvParser";
 import { formatCurrency } from "@/lib/currencyFunctions";
 import { saveLastImportDate } from "@/lib/notifications";
 import { queueTransactionsForSync } from "@/lib/syncQueue";
+import { matchTransactionToSubscription } from "@/lib/subscriptionMatcher";
 import { useSessionStore } from "@/store/useSessionStore";
 import { Feather } from "@expo/vector-icons";
 import { ID } from "appwrite";
@@ -307,16 +308,26 @@ export default function ImportPreviewScreen() {
       // Save balance snapshot before queueing transactions
       await saveBalanceSnapshot(user.id, importBatchId);
       
+      // Fetch confirmed subscriptions so we can auto-link matching imported transactions
+      const confirmedSubs = await getConfirmedSubscriptions(user.id).catch((e) => {
+        console.warn('Failed to fetch confirmed subscriptions for matching:', e);
+        return [] as Awaited<ReturnType<typeof getConfirmedSubscriptions>>;
+      });
+
       const queuedTxs = await queueTransactionsForSync(
         user.id, 
-        finalTransactions.map(tx => ({ 
-          ...tx, 
-          source: "revolut_import" as const,
-          displayName: tx.displayName || tx.title, // Explicitly ensure displayName is set
-          account: tx.account, // Use the account resolved from transaction details
-          importBatchId, // Add the batch ID to all transactions in this import
-          originalAmount: tx.amount, // Preserve original imported amount for future deduplication
-        }))
+        finalTransactions.map(tx => {
+          const subId = matchTransactionToSubscription(tx, confirmedSubs);
+          return { 
+            ...tx, 
+            source: "revolut_import" as const,
+            displayName: tx.displayName || tx.title, // Explicitly ensure displayName is set
+            account: tx.account, // Use the account resolved from transaction details
+            importBatchId, // Add the batch ID to all transactions in this import
+            originalAmount: tx.amount, // Preserve original imported amount for future deduplication
+            ...(subId ? { isSubscription: true, subscriptionId: subId } : {}),
+          };
+        })
       );
       
       // Update existing AIB transactions with matched transfer IDs pointing to newly queued Revolut transactions

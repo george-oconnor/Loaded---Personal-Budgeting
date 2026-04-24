@@ -36,6 +36,8 @@ export interface QueuedTransaction {
   importBatchId?: string;
   importedAt?: string;
   originalAmount?: number;
+  isSubscription?: boolean;
+  subscriptionId?: string;
 }
 
 const SYNC_QUEUE_KEY = 'budget_app_sync_queue';
@@ -72,6 +74,8 @@ export async function queueTransactionsForSync(
     importBatchId?: string;
     importedAt?: string;
     originalAmount?: number;
+    isSubscription?: boolean;
+    subscriptionId?: string;
   }[]
 ): Promise<QueuedTransaction[]> {
   try {
