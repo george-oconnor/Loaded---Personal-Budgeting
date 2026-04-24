@@ -11,6 +11,18 @@ import { useEffect, useMemo, useState } from "react";
 import { ActivityIndicator, Alert, Image, Pressable, RefreshControl, ScrollView, Text, View } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
 
+function getCycleStartDate(nextBilling: Date, frequency: RecurringFrequency): Date {
+  const d = new Date(nextBilling);
+  switch (frequency) {
+    case "weekly": d.setDate(d.getDate() - 7); break;
+    case "biweekly": d.setDate(d.getDate() - 14); break;
+    case "monthly": d.setMonth(d.getMonth() - 1); break;
+    case "quarterly": d.setMonth(d.getMonth() - 3); break;
+    case "annual": d.setFullYear(d.getFullYear() - 1); break;
+  }
+  return d;
+}
+
 function getDefaultCategoryIcon(categoryName: string): string {
   const name = (categoryName || "").toLowerCase();
   const map: Record<string, string> = {
@@ -35,12 +47,14 @@ function ConfirmedRow({
   categories,
   onRemove,
   onMarkAsPaid,
+  isOverdue = false,
 }: {
   item: ConfirmedSubscription;
   currency: string;
   categories: { id: string; name: string; color?: string; icon?: string }[];
   onRemove: (id: string) => void;
   onMarkAsPaid: (id: string) => void;
+  isOverdue?: boolean;
 }) {
   const [crowdSourcedIconUrl, setCrowdSourcedIconUrl] = useState<string | null>(null);
   const [crowdSourcedIconFailed, setCrowdSourcedIconFailed] = useState(false);
@@ -95,15 +109,20 @@ function ConfirmedRow({
     ? Math.ceil((nextDate.getTime() - now.getTime()) / (1000 * 60 * 60 * 24))
     : null;
 
+  const overdueDays = isOverdue && daysUntilNext != null ? Math.abs(daysUntilNext) : 0;
   const nextLabel = !nextDate
     ? getFrequencyLabel(freq)
-    : daysUntilNext != null && daysUntilNext <= 0
-      ? "Due now"
-      : daysUntilNext === 1
-        ? "Tomorrow"
-        : daysUntilNext != null && daysUntilNext <= 7
-          ? `In ${daysUntilNext} days`
-          : nextDate.toLocaleDateString("en-US", { month: "short", day: "numeric" });
+    : isOverdue
+      ? overdueDays === 0
+        ? "Overdue"
+        : `Overdue by ${overdueDays} day${overdueDays !== 1 ? "s" : ""}`
+      : daysUntilNext != null && daysUntilNext <= 0
+        ? "Due now"
+        : daysUntilNext === 1
+          ? "Tomorrow"
+          : daysUntilNext != null && daysUntilNext <= 7
+            ? `In ${daysUntilNext} days`
+            : nextDate.toLocaleDateString("en-US", { month: "short", day: "numeric" });
 
   const statusColor =
     item.status === "active" ? "#22C55E" : item.status === "paused" ? "#F59E0B" : "#EF4444";
@@ -159,8 +178,8 @@ function ConfirmedRow({
           {item.name || item.displayName}
         </Text>
         <View className="flex-row items-center mt-0.5">
-          <View className="w-1.5 h-1.5 rounded-full mr-1.5" style={{ backgroundColor: statusColor }} />
-          <Text className="text-gray-500 text-xs">
+          <View className="w-1.5 h-1.5 rounded-full mr-1.5" style={{ backgroundColor: isOverdue ? "#EF4444" : statusColor }} />
+          <Text className={`text-xs ${isOverdue ? "text-red-600 font-semibold" : "text-gray-500"}`}>
             {getFrequencyLabel(freq)} · {nextLabel}
           </Text>
         </View>
@@ -190,7 +209,7 @@ export default function SubscriptionsScreen() {
   const isTab = segments[0] === "(tabs)";
   const { confirmedSubscriptions, potentialSubscriptions, earlyPayments, loading, fetchAll, removeConfirmed, markAsPaidForPeriod, dismissEarlyPayment } =
     useSubscriptionsStore();
-  const { summary, categories } = useHomeStore();
+  const { summary, categories, transactions } = useHomeStore();
   const currency = summary?.currency ?? "EUR";
   const [refreshing, setRefreshing] = useState(false);
   const [filter, setFilter] = useState<"all" | "due">("all");
@@ -254,14 +273,24 @@ export default function SubscriptionsScreen() {
     const now = new Date();
     const weekFromNow = new Date();
     weekFromNow.setDate(weekFromNow.getDate() + 7);
+    const fiveDaysAgo = new Date();
+    fiveDaysAgo.setDate(fiveDaysAgo.getDate() - 5);
     return displayedSubscriptions
       .filter((s) => {
         if (!s.nextBillingDate) return false;
         const next = new Date(s.nextBillingDate);
-        return next >= now && next <= weekFromNow;
+        if (next >= now && next <= weekFromNow) return true;
+        if (next < now && next >= fiveDaysAgo) {
+          const cycleStart = getCycleStartDate(next, s.frequency as RecurringFrequency);
+          const hasPaymentThisCycle = transactions.some(
+            (t) => t.subscriptionId === s.id && new Date(t.date) >= cycleStart
+          );
+          return !hasPaymentThisCycle;
+        }
+        return false;
       })
       .sort((a, b) => new Date(a.nextBillingDate!).getTime() - new Date(b.nextBillingDate!).getTime());
-  }, [displayedSubscriptions]);
+  }, [displayedSubscriptions, transactions]);
 
   const grouped = useMemo(() => {
     const map = new Map<string, ConfirmedSubscription[]>();
@@ -462,16 +491,21 @@ export default function SubscriptionsScreen() {
             {upcoming.length > 0 && (
               <View className="mb-5">
                 <Text className="text-base font-bold text-dark-100 mb-2.5">Coming Up</Text>
-                {upcoming.map((item) => (
-                  <ConfirmedRow
-                    key={item.id}
-                    item={item}
-                    currency={currency}
-                    categories={categories}
-                    onRemove={removeConfirmed}
-                    onMarkAsPaid={markAsPaidForPeriod}
-                  />
-                ))}
+                {upcoming.map((item) => {
+                  const next = item.nextBillingDate ? new Date(item.nextBillingDate) : null;
+                  const isOverdue = !!next && next < new Date();
+                  return (
+                    <ConfirmedRow
+                      key={item.id}
+                      item={item}
+                      currency={currency}
+                      categories={categories}
+                      onRemove={removeConfirmed}
+                      onMarkAsPaid={markAsPaidForPeriod}
+                      isOverdue={isOverdue}
+                    />
+                  );
+                })}
               </View>
             )}
 

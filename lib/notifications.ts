@@ -946,22 +946,49 @@ export async function scheduleSubscriptionReminder(params: {
 
   if (!nextBillingDate) return null;
 
-  // Calculate reminder date: day before billing, at 10:00 AM local
   const billingDate = new Date(nextBillingDate);
-  const reminderDate = new Date(billingDate);
-  reminderDate.setDate(reminderDate.getDate() - 1);
-  reminderDate.setHours(10, 0, 0, 0);
+  const now = new Date();
 
-  // Don't schedule if the reminder time is already past
-  if (reminderDate.getTime() <= Date.now()) return null;
+  // Don't schedule reminders for billing dates already in the past (overdue handled in-app)
+  if (billingDate.getTime() <= now.getTime()) return null;
+
+  // Preferred reminder: day before billing at 10:00 AM local
+  const dayBefore = new Date(billingDate);
+  dayBefore.setDate(dayBefore.getDate() - 1);
+  dayBefore.setHours(10, 0, 0, 0);
+
+  // Fallback: same-day at 9:00 AM (for subs confirmed less than a day before billing)
+  const sameDay = new Date(billingDate);
+  sameDay.setHours(9, 0, 0, 0);
+
+  // Final fallback: 1 minute from now (so the user still gets *some* reminder)
+  const soon = new Date(now.getTime() + 60 * 1000);
+
+  let reminderDate: Date;
+  if (dayBefore.getTime() > now.getTime()) {
+    reminderDate = dayBefore;
+  } else if (sameDay.getTime() > now.getTime() && sameDay.getTime() < billingDate.getTime()) {
+    reminderDate = sameDay;
+  } else {
+    reminderDate = soon;
+  }
 
   const id = `${NOTIFICATION_IDS.SUBSCRIPTION_REMINDER}-${subscriptionId}`;
   const formattedAmount = formatCurrency(amount / 100, currency);
 
+  // Body wording adjusts based on how close the reminder is to billing
+  const hoursUntilBilling = (billingDate.getTime() - reminderDate.getTime()) / (1000 * 60 * 60);
+  const title = hoursUntilBilling >= 18
+    ? `${merchantName} payment tomorrow`
+    : `${merchantName} payment today`;
+  const body = hoursUntilBilling >= 18
+    ? `Your ${merchantName} subscription of ${formattedAmount} is due tomorrow.`
+    : `Your ${merchantName} subscription of ${formattedAmount} is due today.`;
+
   return scheduleNotification(
     id,
-    `${merchantName} payment tomorrow`,
-    `Your ${merchantName} subscription of ${formattedAmount} is due tomorrow.`,
+    title,
+    body,
     { type: Notifications.SchedulableTriggerInputTypes.DATE, date: reminderDate },
     { type: 'subscription-reminder', subscriptionId, merchantName },
   );

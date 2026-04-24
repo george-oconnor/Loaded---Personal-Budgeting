@@ -443,7 +443,13 @@ export const useSubscriptionsStore = create<SubscriptionsState>((set, get) => ({
     const now = new Date();
 
     for (const sub of subs) {
-      if (sub.status !== "active" || !sub.nextBillingDate) continue;
+      // Cancel any existing reminder for non-active subs (paused / cancelled)
+      if (sub.status !== "active" || !sub.nextBillingDate) {
+        if (!sub.id.startsWith("temp_")) {
+          cancelSubscriptionReminder(sub.id).catch(() => {});
+        }
+        continue;
+      }
 
       // If the billing date is in the past, advance it
       let nextDate = new Date(sub.nextBillingDate);

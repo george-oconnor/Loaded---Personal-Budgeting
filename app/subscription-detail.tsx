@@ -11,6 +11,7 @@ import * as Haptics from "expo-haptics";
 import { router, useLocalSearchParams } from "expo-router";
 import { useEffect, useMemo, useState } from "react";
 import {
+  Alert,
   FlatList,
   Image,
   Modal,
@@ -147,8 +148,13 @@ export default function SubscriptionDetailScreen() {
         ),
       });
       Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
-    } catch {
+    } catch (err) {
       Haptics.notificationAsync(Haptics.NotificationFeedbackType.Error);
+      console.error('Failed to add transaction to subscription:', err);
+      Alert.alert(
+        "Couldn't link transaction",
+        "Something went wrong. Please try again."
+      );
     } finally {
       setAddingIds((prev) => {
         const next = new Set(prev);
