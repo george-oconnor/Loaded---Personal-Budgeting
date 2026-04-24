@@ -1,4 +1,5 @@
 import { getMonthlyBudget, updateMonthlyBudget } from "@/lib/appwrite";
+import { getCycleEndDateForCycleStart, getCycleStartDateWithOffset } from "@/lib/budgetCycle";
 import { useHomeStore } from "@/store/useHomeStore";
 import { useSessionStore } from "@/store/useSessionStore";
 import { Feather } from "@expo/vector-icons";
@@ -142,19 +143,19 @@ export default function SetBudgetScreen() {
         return;
       }
 
-      const now = new Date();
-      const prevMonth = new Date(now.getFullYear(), now.getMonth() - 1, 1);
-      const monthStart = new Date(prevMonth.getFullYear(), prevMonth.getMonth(), 1);
-      const monthEnd = new Date(prevMonth.getFullYear(), prevMonth.getMonth() + 1, 0, 23, 59, 59, 999);
+      const prevCycleStart = getCycleStartDateWithOffset(cycleType, cycleDay ? Number(cycleDay) : undefined, -1);
+      const prevCycleEnd = getCycleEndDateForCycleStart(cycleType, cycleDay ? Number(cycleDay) : undefined, prevCycleStart);
 
       const total = transactions
         .filter((t) => {
           const d = new Date(t.date);
+          const excluded =
+            t.excludeFromAnalytics || t.matchedTransferId || t.isAnalyticsProtected;
           return (
             t.kind === "expense" &&
-            !t.excludeFromAnalytics &&
-            d >= monthStart &&
-            d <= monthEnd
+            !excluded &&
+            d >= prevCycleStart &&
+            d <= prevCycleEnd
           );
         })
         .reduce((sum, t) => sum + Math.abs(t.amount), 0);

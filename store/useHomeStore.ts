@@ -5,7 +5,7 @@ import {
     getTransactionsInRangeAll,
     updateMonthlyBudget,
 } from "@/lib/appwrite";
-import { getCycleStartDateWithOffset, getTransactionsInCurrentCycle } from "@/lib/budgetCycle";
+import { getCycleEndDateForCycleStart, getCycleStartDateWithOffset, getTransactionsInCurrentCycle } from "@/lib/budgetCycle";
 import { captureException } from "@/lib/sentry";
 import { getQueuedTransactions } from "@/lib/syncQueue";
 import type { Category, Summary, Transaction } from "@/types/type";
@@ -157,6 +157,7 @@ export const useHomeStore = create<HomeState>((set, get) => ({
         date: t.date,
         currency: (t as any).currency,
         excludeFromAnalytics: (t as any).excludeFromAnalytics,
+        isAnalyticsProtected: (t as any).isAnalyticsProtected,
         source: (t as any).source,
         displayName: (t as any).displayName,
         account: (t as any).account,
@@ -227,21 +228,26 @@ export const useHomeStore = create<HomeState>((set, get) => ({
         .reduce((s, t) => s + Math.abs(t.amount), 0);
 
       const computeLastMonthBudget = () => {
-        const prevMonth = new Date(now.getFullYear(), now.getMonth() - 1, 1);
-        const monthStart = new Date(prevMonth.getFullYear(), prevMonth.getMonth(), 1);
-        const monthEnd = new Date(prevMonth.getFullYear(), prevMonth.getMonth() + 1, 0, 23, 59, 59, 999);
+        // Use the same cycle-based window as the Set Budget screen so the saved
+        // figure isn't overwritten by a calendar-month recompute.
+        const cType = (budgetDoc.cycleType as any) || "first_working_day";
+        const cDay = budgetDoc.cycleDay;
+        const prevCycleStart = getCycleStartDateWithOffset(cType, cDay, -1);
+        const prevCycleEnd = getCycleEndDateForCycleStart(cType, cDay, prevCycleStart);
         const total = allTransactions
           .filter((t) => {
             const d = new Date(t.date);
+            const excluded =
+              t.excludeFromAnalytics || t.matchedTransferId || t.isAnalyticsProtected;
             return (
               t.kind === "expense" &&
-              !t.excludeFromAnalytics &&
-              d >= monthStart &&
-              d <= monthEnd
+              !excluded &&
+              d >= prevCycleStart &&
+              d <= prevCycleEnd
             );
           })
           .reduce((sum, t) => sum + Math.abs(t.amount), 0);
-        const monthRef = `${prevMonth.getFullYear()}-${String(prevMonth.getMonth() + 1).padStart(2, "0")}`;
+        const monthRef = `${prevCycleStart.getFullYear()}-${String(prevCycleStart.getMonth() + 1).padStart(2, "0")}`;
         return { total, monthRef };
       };
 
@@ -335,6 +341,7 @@ export const useHomeStore = create<HomeState>((set, get) => ({
         date: t.date,
         currency: (t as any).currency,
         excludeFromAnalytics: (t as any).excludeFromAnalytics,
+        isAnalyticsProtected: (t as any).isAnalyticsProtected,
         source: (t as any).source,
         displayName: (t as any).displayName,
         account: (t as any).account,

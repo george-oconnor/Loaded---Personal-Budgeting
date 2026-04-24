@@ -11,18 +11,6 @@ import { useEffect, useMemo, useState } from "react";
 import { ActivityIndicator, Alert, Image, Pressable, RefreshControl, ScrollView, Text, View } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
 
-function getCycleStartDate(nextBilling: Date, frequency: RecurringFrequency): Date {
-  const d = new Date(nextBilling);
-  switch (frequency) {
-    case "weekly": d.setDate(d.getDate() - 7); break;
-    case "biweekly": d.setDate(d.getDate() - 14); break;
-    case "monthly": d.setMonth(d.getMonth() - 1); break;
-    case "quarterly": d.setMonth(d.getMonth() - 3); break;
-    case "annual": d.setFullYear(d.getFullYear() - 1); break;
-  }
-  return d;
-}
-
 function getDefaultCategoryIcon(categoryName: string): string {
   const name = (categoryName || "").toLowerCase();
   const map: Record<string, string> = {
@@ -281,9 +269,12 @@ export default function SubscriptionsScreen() {
         const next = new Date(s.nextBillingDate);
         if (next >= now && next <= weekFromNow) return true;
         if (next < now && next >= fiveDaysAgo) {
-          const cycleStart = getCycleStartDate(next, s.frequency as RecurringFrequency);
+          // Only count payments made within ±7 days of the billing date as "this cycle's payment"
+          // (prevents the previous cycle's payment from masking an overdue one)
+          const windowStart = new Date(next);
+          windowStart.setDate(windowStart.getDate() - 7);
           const hasPaymentThisCycle = transactions.some(
-            (t) => t.subscriptionId === s.id && new Date(t.date) >= cycleStart
+            (t) => t.subscriptionId === s.id && new Date(t.date) >= windowStart
           );
           return !hasPaymentThisCycle;
         }
