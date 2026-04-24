@@ -4,55 +4,50 @@
     "appVersionSource": "local"
   },
   "build": {
-    "preview": {
+    "_base": {
       "env": {
+        "EXPO_PUBLIC_APPWRITE_ENDPOINT": "https://fra.cloud.appwrite.io/v1",
+        "EXPO_PUBLIC_APPWRITE_PROJECT_ID": "69455c28002093139de1",
+        "EXPO_PUBLIC_APPWRITE_PROJECT_NAME": "budget-app",
+        "EXPO_PUBLIC_APPWRITE_DATABASE_ID": "69455cde003a052c1e1d",
+        "EXPO_PUBLIC_APPWRITE_TABLE_TRANSACTIONS": "transactions",
+        "EXPO_PUBLIC_APPWRITE_TABLE_BUDGETS": "budgets",
+        "EXPO_PUBLIC_APPWRITE_TABLE_CATEGORIES": "categories",
+        "EXPO_PUBLIC_APPWRITE_TABLE_USERS": "users",
+        "EXPO_PUBLIC_APPWRITE_TABLE_BALANCES": "balances",
+        "EXPO_PUBLIC_APPWRITE_TABLE_MERCHANT_VOTES": "merchant_votes",
         "EXPO_PUBLIC_APPWRITE_TABLE_ICON_VOTES": "icon_votes",
         "EXPO_PUBLIC_APPWRITE_TABLE_ACCOUNT_IMPORTS": "accountImports",
         "EXPO_PUBLIC_APPWRITE_TABLE_USER_PREFERENCES": "userPreferences",
-        "EXPO_PUBLIC_APPWRITE_TABLE_SUBSCRIPTIONS": "subscriptions"
-      },
+        "EXPO_PUBLIC_APPWRITE_TABLE_SUBSCRIPTIONS": "subscriptions",
+        "EXPO_PUBLIC_APPWRITE_TABLE_BALANCE_HISTORY": "balanceHistory",
+        "EXPO_PUBLIC_SENTRY_DSN": "https://ce3e3ecd9f6dd369bda57ce39d8dae6e@o4509054949195776.ingest.de.sentry.io/4510562512339024"
+      }
+    },
+    "preview": {
+      "extends": "_base",
       "ios": {
         "simulator": true
       }
     },
     "preview2": {
-      "env": {
-        "EXPO_PUBLIC_APPWRITE_TABLE_ICON_VOTES": "icon_votes",
-        "EXPO_PUBLIC_APPWRITE_TABLE_ACCOUNT_IMPORTS": "accountImports",
-        "EXPO_PUBLIC_APPWRITE_TABLE_USER_PREFERENCES": "userPreferences",
-        "EXPO_PUBLIC_APPWRITE_TABLE_SUBSCRIPTIONS": "subscriptions"
-      },
+      "extends": "_base",
       "android": {
         "gradleCommand": ":app:assembleRelease"
       }
     },
     "preview3": {
-      "env": {
-        "EXPO_PUBLIC_APPWRITE_TABLE_ICON_VOTES": "icon_votes",
-        "EXPO_PUBLIC_APPWRITE_TABLE_ACCOUNT_IMPORTS": "accountImports",
-        "EXPO_PUBLIC_APPWRITE_TABLE_USER_PREFERENCES": "userPreferences",
-        "EXPO_PUBLIC_APPWRITE_TABLE_SUBSCRIPTIONS": "subscriptions"
-      },
+      "extends": "_base",
       "developmentClient": true
     },
     "production": {
-      "env": {
-        "EXPO_PUBLIC_APPWRITE_TABLE_ICON_VOTES": "icon_votes",
-        "EXPO_PUBLIC_APPWRITE_TABLE_ACCOUNT_IMPORTS": "accountImports",
-        "EXPO_PUBLIC_APPWRITE_TABLE_USER_PREFERENCES": "userPreferences",
-        "EXPO_PUBLIC_APPWRITE_TABLE_SUBSCRIPTIONS": "subscriptions"
-      },
+      "extends": "_base",
       "ios": {
         "resourceClass": "medium"
       }
     },
     "testflight": {
-      "env": {
-        "EXPO_PUBLIC_APPWRITE_TABLE_ICON_VOTES": "icon_votes",
-        "EXPO_PUBLIC_APPWRITE_TABLE_ACCOUNT_IMPORTS": "accountImports",
-        "EXPO_PUBLIC_APPWRITE_TABLE_USER_PREFERENCES": "userPreferences",
-        "EXPO_PUBLIC_APPWRITE_TABLE_SUBSCRIPTIONS": "subscriptions"
-      },
+      "extends": "_base",
       "ios": {
         "resourceClass": "medium"
       },

@@ -1,3 +1,4 @@
+import { getPendingBalanceHistoryCount, getPendingBalanceHistoryWipeCount } from "@/lib/balanceHistory";
 import { getDeleteStatus } from "@/lib/deleteQueue";
 import { getPendingTransactionCount, getSyncStatus, SyncStatus } from "@/lib/syncQueue";
 import { useNotificationStore } from "@/store/useNotificationStore";
@@ -22,6 +23,8 @@ export default function Header({
   const { unreadCount, openTray } = useNotificationStore();
   const [syncStatus, setSyncStatus] = useState<SyncStatus | null>(null);
   const [pendingCount, setPendingCount] = useState(0);
+  const [pendingBalHistCount, setPendingBalHistCount] = useState(0);
+  const [pendingBalHistWipeCount, setPendingBalHistWipeCount] = useState(0);
   const [deleteStatus, setDeleteStatus] = useState<any>(null);
   const rotateAnim = useRef(new Animated.Value(0)).current;
   
@@ -37,9 +40,13 @@ export default function Header({
     const checkSync = async () => {
       const status = await getSyncStatus();
       const pending = await getPendingTransactionCount();
+      const balHist = await getPendingBalanceHistoryCount(user?.id);
+      const balHistWipe = await getPendingBalanceHistoryWipeCount(user?.id);
       const delStatus = await getDeleteStatus();
       setSyncStatus(status);
       setPendingCount(pending);
+      setPendingBalHistCount(balHist);
+      setPendingBalHistWipeCount(balHistWipe);
       // Only show delete status if it belongs to the current user
       if (delStatus && delStatus.userId === user?.id) {
         setDeleteStatus(delStatus);
@@ -53,31 +60,35 @@ export default function Header({
     return () => clearInterval(interval);
   }, [user?.id]);
 
+  const hasPendingSync = syncStatus?.isSyncing || pendingCount > 0 || (deleteStatus && deleteStatus.status !== 'completed') || pendingBalHistCount > 0 || pendingBalHistWipeCount > 0;
+  const isActiveOperation = !!(syncStatus?.isSyncing || deleteStatus?.status === 'in-progress' || pendingBalHistCount > 0 || pendingBalHistWipeCount > 0);
+  const hasNotifications = unreadCount > 0 || hasPendingSync;
+
   useEffect(() => {
-    if (syncStatus?.isSyncing || deleteStatus?.status === 'in-progress') {
-      // Start rotation animation
-      Animated.loop(
-        Animated.timing(rotateAnim, {
-          toValue: 1,
-          duration: 1000,
-          easing: Easing.linear,
-          useNativeDriver: true,
-        })
-      ).start();
-    } else {
-      // Reset rotation
+    if (!isActiveOperation) {
       rotateAnim.setValue(0);
+      return;
     }
-  }, [syncStatus?.isSyncing, deleteStatus?.status]);
+    rotateAnim.setValue(0);
+    const loop = Animated.loop(
+      Animated.timing(rotateAnim, {
+        toValue: 1,
+        duration: 1000,
+        easing: Easing.linear,
+        useNativeDriver: true,
+      })
+    );
+    loop.start();
+    return () => {
+      loop.stop();
+    };
+    // Only restart when active state flips, not on every count change.
+  }, [isActiveOperation, rotateAnim]);
 
   const spin = rotateAnim.interpolate({
     inputRange: [0, 1],
     outputRange: ['0deg', '360deg'],
   });
-
-  const hasPendingSync = syncStatus?.isSyncing || pendingCount > 0 || (deleteStatus && deleteStatus.status !== 'completed');
-  const isActiveOperation = syncStatus?.isSyncing || deleteStatus?.status === 'in-progress';
-  const hasNotifications = unreadCount > 0 || hasPendingSync;
 
   return (
     <View className={`flex-row items-center justify-between pt-4 ${noPaddingBottom ? "" : "pb-6"}`}>

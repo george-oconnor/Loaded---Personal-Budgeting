@@ -1,4 +1,6 @@
 import { resolveAccountInfo, updateAccountBalance, upsertBalanceRemote } from "@/lib/accountBalances";
+import { recordImportBalanceHistory } from "@/lib/balanceHistory";
+import { ID } from "appwrite";
 import {
     convertRevolutToAppTransaction,
     markTransfers,
@@ -29,9 +31,11 @@ type ParsedCache = {
   totalRows: number;
   skippedRows: number;
   skippedDetails: SkippedRow[];
+  importBatchId?: string;
 };
 
 let parsedTransactionsCache: ParsedCache | null = null;
+let revolutImportBatchId: string | undefined;
 
 export function getParsedTransactions(): ParsedCache | null {
   return parsedTransactionsCache;
@@ -100,6 +104,10 @@ export default function RevolutImportPasteScreen() {
         setLoading(false);
         return;
       }
+
+      // Note: REVERTED/DECLINED/FAILED rows are filtered out at parse time in
+      // parseRevolutCSV (see lib/csvParser.ts). They appear in parseResult.skipped
+      // and parseResult.skippedDetails.
 
       // Build hints for account resolution (used for both balance parsing and transaction conversion)
       const lastVaultNameByCurrency = new Map<string, string>();
@@ -265,6 +273,27 @@ export default function RevolutImportPasteScreen() {
             await upsertBalanceRemote(user.id, { accountKey, accountName, accountType, provider, currency }, balance, importTime);
           }
         }
+
+        // Record daily balance history (one batchId shared with the upcoming preview save)
+        if (user?.id) {
+          revolutImportBatchId = ID.unique();
+          try {
+            const historyInputs = Array.from(accountBalances.values()).map(({ accountKey, accountName, provider, currency, balance, lastDateISO }) => ({
+              accountKey,
+              accountName,
+              provider,
+              currency,
+              finalBalance: balance,
+              finalBalanceDate: lastDateISO || importTime,
+              transactions: transactionsWithTransfers
+                .filter((t: any) => t.account === accountName)
+                .map((t: any) => ({ date: t.date, amount: t.amount, kind: t.kind })),
+            }));
+            await recordImportBalanceHistory(user.id, revolutImportBatchId, historyInputs);
+          } catch (histErr) {
+            console.error('Failed to record balance history (revolut):', histErr);
+          }
+        }
       }
 
       // Store in cache instead of passing through params
@@ -274,6 +303,7 @@ export default function RevolutImportPasteScreen() {
         totalRows: parseResult.totalRows,
         skippedRows: parseResult.skipped,
         skippedDetails: parseResult.skippedDetails,
+        importBatchId: revolutImportBatchId,
       };
 
       // Navigate to preview screen

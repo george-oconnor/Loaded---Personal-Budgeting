@@ -30,6 +30,9 @@ const userPreferencesTableId =
 const subscriptionsTableId =
   process.env.EXPO_PUBLIC_APPWRITE_TABLE_SUBSCRIPTIONS ||
   process.env.EXPO_PUBLIC_APPWRITE_COLLECTION_SUBSCRIPTIONS;
+const balanceHistoryTableId =
+  process.env.EXPO_PUBLIC_APPWRITE_TABLE_BALANCE_HISTORY ||
+  process.env.EXPO_PUBLIC_APPWRITE_COLLECTION_BALANCE_HISTORY;
 
 export const appwriteClient = new Client();
 if (endpoint && projectId) {
@@ -58,6 +61,13 @@ export async function createAccount(email: string, password: string, name: strin
 export async function signIn(email: string, password: string) {
   try {
     addBreadcrumb({ message: 'Attempting sign in', category: 'auth', data: { email } });
+    // Defensive: clear any stale session before creating a new one. Appwrite throws
+    // "Creation of a session is prohibited when a session is active" otherwise.
+    try {
+      await account.deleteSession('current');
+    } catch {
+      // No existing session — ignore.
+    }
     const result = await account.createEmailPasswordSession(email, password);
     addBreadcrumb({ message: 'Sign in successful', category: 'auth', level: 'info' });
     return result;
@@ -379,27 +389,50 @@ export async function saveBalanceSnapshotToAppwrite(
 
   try {
     const snapshotTimestamp = new Date().toISOString();
-    
-    for (const balance of balances) {
-      // Find the existing balance record
-      const res = await databases.listDocuments(databaseId, balancesTableId, [
-        Query.equal("userId", userId),
-        Query.equal("accountKey", balance.accountKey),
-        Query.limit(1),
-      ]);
+    const { runThrottled } = await import('./appwriteThrottle');
 
-      const doc = res.documents?.[0];
-      if (doc) {
-        // Update the record to store current balance as previousBalance
-        await databases.updateDocument(databaseId, balancesTableId, doc.$id, {
-          previousBalance: balance.balance,
-          previousBalanceTimestamp: snapshotTimestamp,
-          importBatchId: importBatchId,
-        });
+    let failed = 0;
+    await runThrottled(
+      balances,
+      async (balance) => {
+        // Find the existing balance record
+        const res = await databases.listDocuments(databaseId!, balancesTableId!, [
+          Query.equal("userId", userId),
+          Query.equal("accountKey", balance.accountKey),
+          Query.limit(1),
+        ]);
+
+        const doc = res.documents?.[0];
+        if (doc) {
+          await databases.updateDocument(databaseId!, balancesTableId!, doc.$id, {
+            previousBalance: balance.balance,
+            previousBalanceTimestamp: snapshotTimestamp,
+            importBatchId: importBatchId,
+          });
+        }
+      },
+      {
+        chunkSize: 3,
+        chunkDelayMs: 600,
+        maxRetries: 5,
+        label: 'saveBalanceSnapshotToAppwrite',
+        onError: (err, balance) => {
+          failed++;
+          console.error(
+            `saveBalanceSnapshotToAppwrite: failed to snapshot ${balance.accountKey}`,
+            err
+          );
+        },
       }
+    );
+
+    if (failed > 0) {
+      console.warn(
+        `Balance snapshot completed with ${failed}/${balances.length} failures (undo may be partial)`
+      );
+    } else {
+      console.log("Balance snapshot saved to Appwrite");
     }
-    
-    console.log("Balance snapshot saved to Appwrite");
   } catch (err) {
     console.error("Error saving balance snapshot to Appwrite:", err);
     captureException(err);
@@ -444,6 +477,273 @@ export async function restoreBalancesFromSnapshot(userId: string, importBatchId:
     console.error("Error restoring balances from snapshot:", err);
     captureException(err);
     return false;
+  }
+}
+
+// ============================================================
+// Balance History (daily account balance snapshots)
+// ============================================================
+
+export type BalanceHistoryDoc = {
+  userId: string;
+  accountKey: string;
+  date: string; // YYYY-MM-DD (UTC)
+  balance: number; // cents
+  currency: string;
+  accountName?: string;
+  provider?: string;
+  source?: 'import' | 'manual' | 'seed';
+  importBatchId?: string;
+};
+
+export function isBalanceHistoryConfigured(): boolean {
+  return Boolean(databaseId && balanceHistoryTableId);
+}
+
+export async function upsertBalanceHistoryEntries(
+  userId: string,
+  entries: BalanceHistoryDoc[]
+): Promise<void> {
+  if (!databaseId || !balanceHistoryTableId) {
+    return; // No-op when not configured
+  }
+  if (!entries.length) return;
+
+  // Group entries by accountKey so we can fetch existing rows in fewer queries.
+  const byAccount = new Map<string, BalanceHistoryDoc[]>();
+  for (const e of entries) {
+    const list = byAccount.get(e.accountKey) || [];
+    list.push(e);
+    byAccount.set(e.accountKey, list);
+  }
+
+  for (const [accountKey, list] of byAccount) {
+    // Compute the date range for this account's entries
+    const dates = list.map((e) => e.date).sort();
+    const minDate = dates[0];
+    const maxDate = dates[dates.length - 1];
+
+    // Fetch existing rows in this range for this account
+    const existingByDate = new Map<string, any>();
+    let cursor: string | undefined;
+    while (true) {
+      const queries: any[] = [
+        Query.equal("userId", userId),
+        Query.equal("accountKey", accountKey),
+        Query.greaterThanEqual("date", minDate),
+        Query.lessThanEqual("date", maxDate),
+        Query.limit(500),
+      ];
+      if (cursor) queries.push(Query.cursorAfter(cursor));
+      const res = await databases.listDocuments(databaseId, balanceHistoryTableId, queries);
+      for (const d of res.documents) existingByDate.set((d as any).date, d);
+      if (res.documents.length < 500) break;
+      cursor = res.documents[res.documents.length - 1].$id;
+    }
+
+    // Upsert each entry
+    for (const entry of list) {
+      const existing = existingByDate.get(entry.date);
+      const payload: any = {
+        userId,
+        accountKey: entry.accountKey,
+        date: entry.date,
+        balance: entry.balance,
+        currency: entry.currency,
+        accountName: entry.accountName,
+        provider: entry.provider,
+        source: entry.source || 'import',
+        importBatchId: entry.importBatchId,
+      };
+      try {
+        if (existing) {
+          await databases.updateDocument(
+            databaseId,
+            balanceHistoryTableId,
+            existing.$id,
+            payload
+          );
+        } else {
+          await databases.createDocument(
+            databaseId,
+            balanceHistoryTableId,
+            ID.unique(),
+            payload,
+            [
+              Permission.read(Role.user(userId)),
+              Permission.update(Role.user(userId)),
+              Permission.delete(Role.user(userId)),
+            ]
+          );
+        }
+      } catch (err) {
+        // Rethrow rate-limit errors so the caller (background flush queue) can
+        // back off and retry the remaining entries instead of silently dropping them.
+        const msg = String((err as any)?.message || err || '').toLowerCase();
+        const code = Number((err as any)?.code);
+        if (code === 429 || msg.includes('rate limit') || msg.includes('too many requests')) {
+          throw err;
+        }
+        console.error('upsertBalanceHistoryEntries entry failed', { accountKey, date: entry.date, err });
+      }
+    }
+  }
+}
+
+export async function getBalanceHistory(
+  userId: string,
+  options: { startDate?: string; endDate?: string; accountKeys?: string[] } = {}
+): Promise<BalanceHistoryDoc[]> {
+  if (!databaseId || !balanceHistoryTableId) return [];
+
+  const all: BalanceHistoryDoc[] = [];
+  const limit = 500;
+  let cursor: string | undefined;
+
+  while (true) {
+    const queries: any[] = [Query.equal("userId", userId)];
+    if (options.startDate) queries.push(Query.greaterThanEqual("date", options.startDate));
+    if (options.endDate) queries.push(Query.lessThanEqual("date", options.endDate));
+    if (options.accountKeys && options.accountKeys.length > 0) {
+      queries.push(Query.equal("accountKey", options.accountKeys));
+    }
+    queries.push(Query.orderAsc("date"));
+    queries.push(Query.limit(limit));
+    if (cursor) queries.push(Query.cursorAfter(cursor));
+
+    try {
+      const res = await databases.listDocuments(databaseId, balanceHistoryTableId, queries);
+      for (const d of res.documents) {
+        const doc = d as any;
+        all.push({
+          userId: doc.userId,
+          accountKey: doc.accountKey,
+          date: doc.date,
+          balance: doc.balance,
+          currency: doc.currency,
+          accountName: doc.accountName,
+          provider: doc.provider,
+          source: doc.source,
+          importBatchId: doc.importBatchId,
+        });
+      }
+      if (res.documents.length < limit) break;
+      cursor = res.documents[res.documents.length - 1].$id;
+    } catch (err) {
+      console.error("getBalanceHistory error", err);
+      captureException(err);
+      break;
+    }
+  }
+
+  return all;
+}
+
+export async function deleteBalanceHistoryByBatch(
+  userId: string,
+  importBatchId: string
+): Promise<number> {
+  if (!databaseId || !balanceHistoryTableId) return 0;
+
+  let deleted = 0;
+  try {
+    while (true) {
+      const res = await databases.listDocuments(databaseId, balanceHistoryTableId, [
+        Query.equal("userId", userId),
+        Query.equal("importBatchId", importBatchId),
+        Query.limit(100),
+      ]);
+      if (res.documents.length === 0) break;
+      for (const doc of res.documents) {
+        try {
+          await databases.deleteDocument(databaseId, balanceHistoryTableId, doc.$id);
+          deleted++;
+        } catch (err) {
+          console.error("deleteBalanceHistoryByBatch entry failed", err);
+        }
+      }
+      if (res.documents.length < 100) break;
+    }
+  } catch (err) {
+    console.error("deleteBalanceHistoryByBatch error", err);
+    captureException(err);
+  }
+  return deleted;
+}
+
+export async function deleteAllBalanceHistory(userId: string): Promise<number> {
+  if (!databaseId || !balanceHistoryTableId) return 0;
+
+  let deleted = 0;
+  try {
+    while (true) {
+      const res = await databases.listDocuments(databaseId, balanceHistoryTableId, [
+        Query.equal("userId", userId),
+        Query.limit(100),
+      ]);
+      if (res.documents.length === 0) break;
+      for (const doc of res.documents) {
+        try {
+          await databases.deleteDocument(databaseId, balanceHistoryTableId, doc.$id);
+          deleted++;
+        } catch (err) {
+          console.error("deleteAllBalanceHistory entry failed", err);
+        }
+      }
+      if (res.documents.length < 100) break;
+    }
+  } catch (err) {
+    console.error("deleteAllBalanceHistory error", err);
+    captureException(err);
+  }
+  return deleted;
+}
+
+/**
+ * Delete a single page of balance-history docs for a user. Used by the
+ * background wipe processor so we can throttle between pages and react to
+ * rate limits between calls.
+ *
+ * Throws on rate-limit / network errors so callers can apply backoff.
+ * Returns the number deleted in this page and whether more docs likely remain.
+ */
+export async function deleteBalanceHistoryPage(
+  userId: string,
+  pageSize: number = 25
+): Promise<{ deleted: number; hasMore: boolean }> {
+  if (!databaseId || !balanceHistoryTableId) return { deleted: 0, hasMore: false };
+
+  const res = await databases.listDocuments(databaseId, balanceHistoryTableId, [
+    Query.equal("userId", userId),
+    Query.limit(pageSize),
+  ]);
+
+  if (res.documents.length === 0) return { deleted: 0, hasMore: false };
+
+  let deleted = 0;
+  for (const doc of res.documents) {
+    await databases.deleteDocument(databaseId, balanceHistoryTableId, doc.$id);
+    deleted++;
+  }
+
+  return { deleted, hasMore: res.documents.length >= pageSize };
+}
+
+/**
+ * Cheap count of remote balance-history docs for a user. Returns 0 when the
+ * collection isn't configured.
+ */
+export async function countBalanceHistory(userId: string): Promise<number> {
+  if (!databaseId || !balanceHistoryTableId) return 0;
+  try {
+    const res = await databases.listDocuments(databaseId, balanceHistoryTableId, [
+      Query.equal("userId", userId),
+      Query.limit(1),
+    ]);
+    return (res as any).total ?? res.documents.length;
+  } catch (err) {
+    console.error("countBalanceHistory error", err);
+    return 0;
   }
 }
 

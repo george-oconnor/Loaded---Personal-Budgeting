@@ -1,4 +1,5 @@
 import { saveBalanceSnapshot, updateAccountBalance, upsertBalanceRemote } from "@/lib/accountBalances";
+import { recordImportBalanceHistory } from "@/lib/balanceHistory";
 import { getAllTransactionsForUser, getConfirmedSubscriptions, updateTransaction } from "@/lib/appwrite";
 import { getTransferCategoryId } from "@/lib/categorization";
 import { detectAibTransfers, detectCrossBankTransfers } from "@/lib/csvParser";
@@ -517,6 +518,23 @@ export default function ImportPreviewScreen() {
             await upsertBalanceRemote(user.id, { accountKey, accountName, accountType, provider: "aib", currency }, finalBalance, importTime);
           }
           console.log(`Updated balance for ${accountName}: ${(finalBalance / 100).toFixed(2)} ${currency}`);
+
+          // Record daily balance history for the chart
+          if (user?.id && accountKey) {
+            try {
+              await recordImportBalanceHistory(user.id, importBatchId, [{
+                accountKey,
+                accountName,
+                provider: "aib",
+                currency,
+                finalBalance,
+                finalBalanceDate: importTime,
+                transactions: finalTransactions.map(t => ({ date: t.date, amount: t.amount, kind: t.kind })),
+              }]);
+            } catch (histErr) {
+              console.error('Failed to record balance history (aib):', histErr);
+            }
+          }
         }
       }
       console.log(`Step 12 complete: Balance updated in ${Date.now() - step12Start}ms`);

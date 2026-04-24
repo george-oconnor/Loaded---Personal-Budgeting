@@ -1,4 +1,5 @@
 import { getAccountBalances, removeAccountBalance, type AccountBalance } from "@/lib/accountBalances";
+import BalanceHistoryChart from "@/components/BalanceHistoryChart";
 import { convertCurrency, formatCurrency, getExchangeRates, getPrimaryCurrency } from "@/lib/currencyFunctions";
 import { useSessionStore } from "@/store/useSessionStore";
 import { Feather } from "@expo/vector-icons";
@@ -47,6 +48,16 @@ function AccountRow({
   formatDate: (d: string) => string;
 }) {
   const rowKey = account.accountKey || `${account.accountName}-${account.currency}`;
+  const openHistory = () => {
+    router.push({
+      pathname: "/account-history",
+      params: {
+        accountKey: account.accountKey || "",
+        accountName: account.accountName,
+        currency: account.currency || "EUR",
+      },
+    });
+  };
   return (
     <Swipeable
       renderRightActions={() => (
@@ -61,7 +72,8 @@ function AccountRow({
       )}
       overshootRight={false}
     >
-      <View
+      <Pressable
+        onPress={openHistory}
         className="flex-row items-center py-3 px-1"
         style={deletingKey === rowKey ? { opacity: 0.4 } : undefined}
       >
@@ -89,7 +101,7 @@ function AccountRow({
             <Text className="text-xs text-gray-400 mt-0.5">{account.currency}</Text>
           )}
         </View>
-      </View>
+      </Pressable>
     </Swipeable>
   );
 }
@@ -354,6 +366,9 @@ export default function BalancesScreen() {
               </View>
             )}
           </View>
+
+          {/* Balance over time */}
+          <BalanceHistoryChart />
 
           {/* Category Sections */}
           <View className="px-4 pt-4">

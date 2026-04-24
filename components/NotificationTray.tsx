@@ -1,5 +1,6 @@
 import { getDeleteStatus } from '@/lib/deleteQueue';
-import { getPendingTransactionCount, getSyncStatus, SyncStatus } from '@/lib/syncQueue';
+import { getBalanceHistorySyncProgress, getBalanceHistoryWipeProgress, getPendingBalanceHistoryCount, getPendingBalanceHistoryWipeCount } from '@/lib/balanceHistory';
+import { getPendingTransactionCount, getSyncStatus, retryStuckTransactions, startSyncingTransactions, SyncStatus } from '@/lib/syncQueue';
 import { useNotificationStore, type InAppNotification } from '@/store/useNotificationStore';
 import { useSessionStore } from '@/store/useSessionStore';
 import { Feather } from '@expo/vector-icons';
@@ -131,6 +132,36 @@ function EmptyState() {
   );
 }
 
+// Continuously spinning icon (used in sync status rows).
+function SpinningIcon({
+  name,
+  size = 18,
+  color,
+}: {
+  name: any;
+  size?: number;
+  color: string;
+}) {
+  const rotation = useRef(new Animated.Value(0)).current;
+  useEffect(() => {
+    const loop = Animated.loop(
+      Animated.timing(rotation, {
+        toValue: 1,
+        duration: 1200,
+        useNativeDriver: true,
+      })
+    );
+    loop.start();
+    return () => loop.stop();
+  }, [rotation]);
+  const spin = rotation.interpolate({ inputRange: [0, 1], outputRange: ['0deg', '360deg'] });
+  return (
+    <Animated.View style={{ transform: [{ rotate: spin }] }}>
+      <Feather name={name} size={size} color={color} />
+    </Animated.View>
+  );
+}
+
 // Main notification tray component
 export function NotificationTray() {
   const { user } = useSessionStore();
@@ -151,16 +182,46 @@ export function NotificationTray() {
   
   const [syncStatus, setSyncStatus] = useState<SyncStatus | null>(null);
   const [pendingCount, setPendingCount] = useState(0);
+  const [pendingBalanceHistoryCount, setPendingBalanceHistoryCount] = useState(0);
+  const [balanceHistorySyncProgress, setBalanceHistorySyncProgress] = useState<{ pending: number; total: number } | null>(null);
+  const [pendingBalanceHistoryWipeCount, setPendingBalanceHistoryWipeCount] = useState(0);
+  const [balanceHistoryWipeProgress, setBalanceHistoryWipeProgress] = useState<{ total: number; deleted: number } | null>(null);
   const [deleteStatus, setDeleteStatus] = useState<any>(null);
+  const [isManualRetrying, setIsManualRetrying] = useState(false);
+
+  const handleManualRetry = useCallback(async () => {
+    if (isManualRetrying) return;
+    setIsManualRetrying(true);
+    try {
+      await retryStuckTransactions();
+      await startSyncingTransactions((status) => setSyncStatus(status));
+      const pending = await getPendingTransactionCount();
+      setPendingCount(pending);
+      const status = await getSyncStatus();
+      setSyncStatus(status);
+    } catch (err) {
+      console.error('Manual retry failed:', err);
+    } finally {
+      setIsManualRetrying(false);
+    }
+  }, [isManualRetrying]);
 
   // Poll for sync/delete status
   useEffect(() => {
     const checkSync = async () => {
       const status = await getSyncStatus();
       const pending = await getPendingTransactionCount();
+      const pendingBalHist = await getPendingBalanceHistoryCount(user?.id);
+      const balHistSyncProgress = user?.id ? await getBalanceHistorySyncProgress(user.id) : null;
+      const pendingBalHistWipe = await getPendingBalanceHistoryWipeCount(user?.id);
+      const wipeProgress = user?.id ? await getBalanceHistoryWipeProgress(user.id) : null;
       const delStatus = await getDeleteStatus();
       setSyncStatus(status);
       setPendingCount(pending);
+      setPendingBalanceHistoryCount(pendingBalHist);
+      setBalanceHistorySyncProgress(balHistSyncProgress);
+      setPendingBalanceHistoryWipeCount(pendingBalHistWipe);
+      setBalanceHistoryWipeProgress(wipeProgress);
       // Only show delete status if it belongs to the current user
       if (delStatus && delStatus.userId === user?.id) {
         setDeleteStatus(delStatus);
@@ -180,6 +241,8 @@ export function NotificationTray() {
   const visibleNotifications = notifications.filter((n) => !n.dismissed);
   
   const hasSyncActivity = syncStatus?.isSyncing || pendingCount > 0;
+  const hasBalanceHistoryActivity = pendingBalanceHistoryCount > 0;
+  const hasBalanceHistoryWipeActivity = pendingBalanceHistoryWipeCount > 0;
   const hasDeleteActivity = deleteStatus && deleteStatus.status !== 'completed';
 
   useEffect(() => {
@@ -315,7 +378,7 @@ export function NotificationTray() {
           </View>
 
           {/* Sync/Delete Status Section */}
-          {(hasSyncActivity || hasDeleteActivity) && (
+          {(hasSyncActivity || hasDeleteActivity || hasBalanceHistoryActivity || hasBalanceHistoryWipeActivity) && (
             <View className="border-b border-gray-200">
               {/* Delete Status */}
               {deleteStatus && deleteStatus.status !== 'completed' && (
@@ -415,13 +478,99 @@ export function NotificationTray() {
                       />
                     </View>
                   )}
+
+                  {!syncStatus?.isSyncing && pendingCount > 0 && (
+                    <Pressable
+                      onPress={handleManualRetry}
+                      disabled={isManualRetrying}
+                      className={`mt-3 self-start rounded-full px-3 py-1.5 ${isManualRetrying ? 'bg-gray-100' : 'bg-blue-50'}`}
+                    >
+                      <Text className={`text-xs font-semibold ${isManualRetrying ? 'text-gray-400' : 'text-blue-600'}`}>
+                        {isManualRetrying ? 'Retrying…' : 'Retry now'}
+                      </Text>
+                    </Pressable>
+                  )}
+                </View>
+              )}
+
+              {/* Balance History Sync Status */}
+              {hasBalanceHistoryActivity && (
+                <View className="px-4 py-4 border-t border-gray-100">
+                  <View className="flex-row items-center gap-3">
+                    <View className="h-10 w-10 items-center justify-center rounded-full bg-purple-50">
+                      <SpinningIcon name="refresh-cw" size={18} color="#7C3AED" />
+                    </View>
+                    <View className="flex-1">
+                      <Text className="text-sm font-medium text-dark-100">
+                        Syncing balance history...
+                      </Text>
+                      <Text className="text-xs text-gray-500 mt-0.5">
+                        {balanceHistorySyncProgress && balanceHistorySyncProgress.total > 0
+                          ? `${(balanceHistorySyncProgress.total - balanceHistorySyncProgress.pending).toLocaleString()} of ${balanceHistorySyncProgress.total.toLocaleString()} synced`
+                          : `${pendingBalanceHistoryCount} entr${pendingBalanceHistoryCount === 1 ? 'y' : 'ies'} queued`}
+                      </Text>
+                      {balanceHistorySyncProgress && balanceHistorySyncProgress.total > 0 && (
+                        <View className="mt-2 h-1.5 w-full overflow-hidden rounded-full bg-gray-200">
+                          <View
+                            className="h-full rounded-full bg-purple-500"
+                            style={{
+                              width: `${Math.min(
+                                100,
+                                Math.round(
+                                  ((balanceHistorySyncProgress.total - balanceHistorySyncProgress.pending) /
+                                    balanceHistorySyncProgress.total) *
+                                    100
+                                )
+                              )}%`,
+                            }}
+                          />
+                        </View>
+                      )}
+                    </View>
+                  </View>
+                </View>
+              )}
+
+              {/* Balance History Wipe Status */}
+              {hasBalanceHistoryWipeActivity && (
+                <View className="px-4 py-4 border-t border-gray-100">
+                  <View className="flex-row items-center gap-3">
+                    <View className="h-10 w-10 items-center justify-center rounded-full bg-amber-50">
+                      <Feather name="trash-2" size={18} color="#D97706" />
+                    </View>
+                    <View className="flex-1">
+                      <Text className="text-sm font-medium text-dark-100">
+                        Clearing balance history...
+                      </Text>
+                      <Text className="text-xs text-gray-500 mt-0.5">
+                        {balanceHistoryWipeProgress && balanceHistoryWipeProgress.total > 0
+                          ? `${balanceHistoryWipeProgress.deleted.toLocaleString()} of ${balanceHistoryWipeProgress.total.toLocaleString()} snapshots removed`
+                          : 'Removing remote snapshots in the background'}
+                      </Text>
+                      {balanceHistoryWipeProgress && balanceHistoryWipeProgress.total > 0 && (
+                        <View className="mt-2 h-1.5 w-full overflow-hidden rounded-full bg-gray-200">
+                          <View
+                            className="h-full rounded-full bg-amber-500"
+                            style={{
+                              width: `${Math.min(
+                                100,
+                                Math.round(
+                                  (balanceHistoryWipeProgress.deleted / balanceHistoryWipeProgress.total) * 100
+                                )
+                              )}%`,
+                            }}
+                          />
+                        </View>
+                      )}
+                    </View>
+                  </View>
                 </View>
               )}
             </View>
           )}
 
           {/* Notifications list */}
-          {visibleNotifications.length === 0 && !hasSyncActivity && !hasDeleteActivity ? (
+          {visibleNotifications.length === 0 && !hasSyncActivity && !hasDeleteActivity && !hasBalanceHistoryActivity && !hasBalanceHistoryWipeActivity ? (
             <EmptyState />
           ) : (
             <FlatList

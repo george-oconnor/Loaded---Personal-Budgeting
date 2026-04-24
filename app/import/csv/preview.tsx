@@ -1,4 +1,5 @@
 import { saveBalanceSnapshot, updateAccountBalance, upsertBalanceRemote } from "@/lib/accountBalances";
+import { recordImportBalanceHistory } from "@/lib/balanceHistory";
 import { getAllTransactionsForUser, getConfirmedSubscriptions, updateTransaction } from "@/lib/appwrite";
 import { getTransferCategoryId } from "@/lib/categorization";
 import { detectTransferPairs, ParsedTransaction } from "@/lib/csvParser";
@@ -74,6 +75,7 @@ export default function GenericCSVPreviewScreen() {
   const [preUniqueCount, setPreUniqueCount] = useState(0);
   const [precheckDone, setPrecheckDone] = useState(false);
   const [duplicateKeys, setDuplicateKeys] = useState<Set<number>>(new Set());
+  const [filterMode, setFilterMode] = useState<'all' | 'import'>('all');
   const [parseStats, setParseStats] = useState<{
     totalRows: number;
     parsedRows: number;
@@ -330,6 +332,30 @@ export default function GenericCSVPreviewScreen() {
             
             console.log(`Created new account: ${selectedAccountName} with balance: ${finalBalance}`);
           }
+
+          // Record daily balance history (works for both new and existing accounts)
+          if (user?.id && selectedAccountKey && selectedAccountName) {
+            try {
+              const accountCurrency = selectedAccountCurrency || 'EUR';
+              // For existing accounts, fall back to current balance from updateAccountBalance call.
+              const initialCents = initialBalance ? Math.round(parseFloat(initialBalance) * 100) : 0;
+              const seedBalance = isNaN(initialCents) ? 0 : initialCents;
+              const importTime = new Date().toISOString();
+              await recordImportBalanceHistory(user.id, importBatchId, [{
+                accountKey: selectedAccountKey,
+                accountName: selectedAccountName,
+                provider: 'csv',
+                currency: accountCurrency,
+                finalBalance: seedBalance,
+                finalBalanceDate: importTime,
+                transactions: finalTransactions
+                  .filter(t => (t.account || selectedAccountName) === selectedAccountName)
+                  .map(t => ({ date: t.date, amount: t.amount, kind: t.kind })),
+              }]);
+            } catch (histErr) {
+              console.error('Failed to record balance history (csv):', histErr);
+            }
+          }
         } catch (balanceErr) {
           console.error("Failed to create/update account:", balanceErr);
           // Don't fail the import if account creation fails
@@ -504,27 +530,27 @@ export default function GenericCSVPreviewScreen() {
           </View>
 
           {precheckDone && parseStats && (
-            <View className="rounded-lg bg-blue-50 border border-blue-200 p-3">
-              <Text className="text-xs text-blue-900 font-semibold">
-                Parsed {parseStats.parsedRows} of {parseStats.totalRows} data rows
-              </Text>
-              {parseStats.skippedRows > 0 && (
-                <View className="mt-1 gap-1">
-                  <Text className="text-[11px] text-blue-800">
-                    Skipped {parseStats.skippedRows} empty/invalid row{parseStats.skippedRows === 1 ? "" : "s"}.
-                  </Text>
-                  {parseStats.skippedDetails.slice(0, 3).map((d, idx) => (
-                    <Text key={`${d.line}-${idx}`} className="text-[11px] text-blue-700">
-                      Line {d.line}: {d.reason}
-                    </Text>
-                  ))}
-                  {parseStats.skippedDetails.length > 3 && (
-                    <Text className="text-[11px] text-blue-700">
-                      +{parseStats.skippedDetails.length - 3} more
-                    </Text>
-                  )}
-                </View>
-              )}
+            <View className="flex-row gap-1 rounded-full p-1" style={{ backgroundColor: '#FFF1E0' }}>
+              <Pressable
+                key="filter-all"
+                onPress={() => setFilterMode('all')}
+                className="flex-1 py-1.5 rounded-full"
+                style={filterMode === 'all' ? { backgroundColor: '#fff', shadowColor: '#000', shadowOpacity: 0.05, shadowRadius: 2, shadowOffset: { width: 0, height: 1 } } : undefined}
+              >
+                <Text className={`text-center text-xs font-semibold ${filterMode === 'all' ? 'text-gray-700' : 'text-gray-500'}`}>
+                  All ({transactions.length})
+                </Text>
+              </Pressable>
+              <Pressable
+                key="filter-import"
+                onPress={() => setFilterMode('import')}
+                className="flex-1 py-1.5 rounded-full"
+                style={filterMode === 'import' ? { backgroundColor: '#fff', shadowColor: '#000', shadowOpacity: 0.05, shadowRadius: 2, shadowOffset: { width: 0, height: 1 } } : undefined}
+              >
+                <Text className={`text-center text-xs font-semibold ${filterMode === 'import' ? 'text-gray-700' : 'text-gray-500'}`}>
+                  Will import ({transactions.length - duplicateKeys.size})
+                </Text>
+              </Pressable>
             </View>
           )}
 
@@ -539,8 +565,11 @@ export default function GenericCSVPreviewScreen() {
 
         {/* Transaction List */}
         <FlatList
-          data={transactions.map((t, i) => ({ ...t, _origIndex: i })).sort((a, b) => new Date(b.date).getTime() - new Date(a.date).getTime())}
-          keyExtractor={(_, index) => index.toString()}
+          data={transactions
+            .map((t, i) => ({ ...t, _origIndex: i }))
+            .filter((t) => filterMode === 'all' || !duplicateKeys.has(t._origIndex))
+            .sort((a, b) => new Date(b.date).getTime() - new Date(a.date).getTime())}
+          keyExtractor={(item) => `tx-${item._origIndex}`}
           renderItem={({ item }) => {
             const isDuplicate = duplicateKeys.has(item._origIndex);
             return (

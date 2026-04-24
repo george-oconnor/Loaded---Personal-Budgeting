@@ -69,6 +69,7 @@ export default function ImportPreviewScreen() {
   const [preUniqueCount, setPreUniqueCount] = useState(0);
   const [precheckDone, setPrecheckDone] = useState(false);
   const [duplicateKeys, setDuplicateKeys] = useState<Set<number>>(new Set());
+  const [filterMode, setFilterMode] = useState<'all' | 'import'>('all');
   const [parseStats, setParseStats] = useState<{
     totalRows: number;
     parsedRows: number;
@@ -303,8 +304,10 @@ export default function ImportPreviewScreen() {
 
       // Queue transactions locally instead of uploading immediately
       // Use the account name resolved from each transaction (Revolut Current, Pocket, Vault, etc.)
-      const importBatchId = ID.unique(); // Generate unique batch ID for this import
-      
+      // Reuse the batch ID generated in paste.tsx (when balance history was recorded) so undo lines up.
+      const cachedForBatch = getParsedTransactions();
+      const importBatchId = cachedForBatch?.importBatchId || ID.unique();
+
       // Save balance snapshot before queueing transactions
       await saveBalanceSnapshot(user.id, importBatchId);
       
@@ -510,35 +513,38 @@ export default function ImportPreviewScreen() {
           </View>
 
           {precheckDone && parseStats && (
-            <View className="rounded-lg bg-blue-50 border border-blue-200 p-3">
-              <Text className="text-xs text-blue-900 font-semibold">
-                Parsed {parseStats.parsedRows} of {parseStats.totalRows} data rows
-              </Text>
-              {parseStats.skippedRows > 0 && (
-                <View className="mt-1 gap-1">
-                  <Text className="text-[11px] text-blue-800">
-                    Skipped {parseStats.skippedRows} empty/invalid row{parseStats.skippedRows === 1 ? "" : "s"}.
-                  </Text>
-                  {parseStats.skippedDetails.slice(0, 3).map((d, idx) => (
-                    <Text key={`${d.line}-${idx}`} className="text-[11px] text-blue-700">
-                      Line {d.line}: {d.reason}
-                    </Text>
-                  ))}
-                  {parseStats.skippedDetails.length > 3 && (
-                    <Text className="text-[11px] text-blue-700">
-                      +{parseStats.skippedDetails.length - 3} more
-                    </Text>
-                  )}
-                </View>
-              )}
+            <View className="flex-row gap-1 rounded-full p-1" style={{ backgroundColor: '#FFF1E0' }}>
+              <Pressable
+                key="filter-all"
+                onPress={() => setFilterMode('all')}
+                className="flex-1 py-1.5 rounded-full"
+                style={filterMode === 'all' ? { backgroundColor: '#fff', shadowColor: '#000', shadowOpacity: 0.05, shadowRadius: 2, shadowOffset: { width: 0, height: 1 } } : undefined}
+              >
+                <Text className={`text-center text-xs font-semibold ${filterMode === 'all' ? 'text-gray-700' : 'text-gray-500'}`}>
+                  All ({transactions.length})
+                </Text>
+              </Pressable>
+              <Pressable
+                key="filter-import"
+                onPress={() => setFilterMode('import')}
+                className="flex-1 py-1.5 rounded-full"
+                style={filterMode === 'import' ? { backgroundColor: '#fff', shadowColor: '#000', shadowOpacity: 0.05, shadowRadius: 2, shadowOffset: { width: 0, height: 1 } } : undefined}
+              >
+                <Text className={`text-center text-xs font-semibold ${filterMode === 'import' ? 'text-gray-700' : 'text-gray-500'}`}>
+                  Will import ({transactions.length - duplicateKeys.size})
+                </Text>
+              </Pressable>
             </View>
           )}
         </View>
 
         {/* Transaction List */}
         <FlatList
-          data={transactions.map((t, i) => ({ ...t, _origIndex: i })).sort((a, b) => new Date(b.date).getTime() - new Date(a.date).getTime())}
-          keyExtractor={(_, index) => index.toString()}
+          data={transactions
+            .map((t, i) => ({ ...t, _origIndex: i }))
+            .filter((t) => filterMode === 'all' || !duplicateKeys.has(t._origIndex))
+            .sort((a, b) => new Date(b.date).getTime() - new Date(a.date).getTime())}
+          keyExtractor={(item) => `tx-${item._origIndex}`}
           renderItem={({ item }) => {
             const isDuplicate = duplicateKeys.has(item._origIndex);
             return (

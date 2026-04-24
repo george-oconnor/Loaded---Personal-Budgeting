@@ -1,5 +1,6 @@
 import { getDeleteStatus, initializeDeleteStatus, startDeletingTransactions } from '@/lib/deleteQueue';
-import { cleanupSyncQueue, getPendingTransactionCount, getSyncStatus, initializeSyncStatus, startSyncingTransactions } from '@/lib/syncQueue';
+import { cleanupSyncQueue, getPendingTransactionCount, getSyncStatus, initializeSyncStatus, retryStuckTransactions, startSyncingTransactions } from '@/lib/syncQueue';
+import { flushBalanceHistoryQueue, flushBalanceHistoryWipeQueue, getPendingBalanceHistoryCount, getPendingBalanceHistoryWipeCount } from '@/lib/balanceHistory';
 import { useSessionStore } from '@/store/useSessionStore';
 import * as Notifications from 'expo-notifications';
 import { useEffect } from 'react';
@@ -55,7 +56,14 @@ export function useAutoSync() {
           await cleanupSyncQueue(user.id);
         }
         
-        // App came to foreground, try syncing and deleting
+        // App came to foreground, try syncing and deleting.
+        // First, unstick any transactions that hit MAX_RETRY_ATTEMPTS or were
+        // left in a 'syncing' state so they qualify for auto-sync again.
+        const resetCount = await retryStuckTransactions();
+        if (resetCount > 0) {
+          console.log(`Reset ${resetCount} stuck transaction(s) back to pending`);
+        }
+
         const currentSyncStatus = await getSyncStatus();
         const pendingCount = await getPendingTransactionCount(user?.id);
         const deleteStatus = await getDeleteStatus();
@@ -94,6 +102,28 @@ export function useAutoSync() {
             isSyncing = false;
           }
         }
+
+        // Flush any pending balance-history entries (throttled internally)
+        try {
+          const pendingBalHist = await getPendingBalanceHistoryCount(user?.id);
+          if (pendingBalHist > 0) {
+            console.log(`Flushing ${pendingBalHist} pending balance-history entries`);
+            await flushBalanceHistoryQueue();
+          }
+        } catch (err) {
+          console.error('Balance-history flush (foreground) failed:', err);
+        }
+
+        // Drain any queued balance-history wipes (throttled internally)
+        try {
+          const pendingWipes = await getPendingBalanceHistoryWipeCount(user?.id);
+          if (pendingWipes > 0) {
+            console.log(`Draining ${pendingWipes} pending balance-history wipe(s)`);
+            await flushBalanceHistoryWipeQueue();
+          }
+        } catch (err) {
+          console.error('Balance-history wipe flush (foreground) failed:', err);
+        }
       }
       // When app goes to background, sync will automatically pause
     };
@@ -108,6 +138,9 @@ export function useAutoSync() {
         if (user?.id) {
           await cleanupSyncQueue(user.id);
         }
+
+        // Self-heal stuck transactions before each periodic sync attempt
+        await retryStuckTransactions();
         
         const currentSyncStatus = await getSyncStatus();
         const pendingCount = await getPendingTransactionCount(user?.id);
@@ -149,6 +182,26 @@ export function useAutoSync() {
           } finally {
             isSyncing = false;
           }
+        }
+
+        // Flush balance-history queue periodically as well
+        try {
+          const pendingBalHist = await getPendingBalanceHistoryCount(user?.id);
+          if (pendingBalHist > 0) {
+            await flushBalanceHistoryQueue();
+          }
+        } catch (err) {
+          console.error('Balance-history flush (periodic) failed:', err);
+        }
+
+        // Drain pending balance-history wipes periodically
+        try {
+          const pendingWipes = await getPendingBalanceHistoryWipeCount(user?.id);
+          if (pendingWipes > 0) {
+            await flushBalanceHistoryWipeQueue();
+          }
+        } catch (err) {
+          console.error('Balance-history wipe flush (periodic) failed:', err);
         }
       }
     }, 30000); // Every 30 seconds

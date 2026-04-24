@@ -1,4 +1,5 @@
 import { restoreLastBalanceSnapshot } from "@/lib/accountBalances";
+import { clearAllBalanceHistory, deleteBalanceHistoryForBatch } from "@/lib/balanceHistory";
 import { deleteTransactionsByBatchId, getLastImportBatchId } from "@/lib/appwrite";
 import { queueDeleteAll } from "@/lib/deleteQueue";
 import {
@@ -34,6 +35,7 @@ export default function ProfileScreen() {
   const [loading, setLoading] = useState(false);
   const [deleting, setDeleting] = useState(false);
   const [undoLoading, setUndoLoading] = useState(false);
+  const [clearingHistory, setClearingHistory] = useState(false);
   const [deletingAccount, setDeletingAccount] = useState(false);
   const [notificationsEnabled, setNotificationsEnabled] = useState(false);
   const [importRecords, setImportRecords] = useState<Array<{ accountName: string; provider: string; daysSince: number }>>([]);
@@ -190,7 +192,14 @@ export default function ProfileScreen() {
 
               // Restore balances from Appwrite snapshot for this batch
               const restored = await restoreLastBalanceSnapshot(user.id, batchId);
-              
+
+              // Remove balance history rows recorded for this batch
+              try {
+                await deleteBalanceHistoryForBatch(user.id, batchId);
+              } catch (histErr) {
+                console.error('Failed to delete balance history for undone batch:', histErr);
+              }
+
               if (restored) {
                 Alert.alert(
                   "Import Undone",
@@ -210,6 +219,38 @@ export default function ProfileScreen() {
               Alert.alert("Error", "Failed to undo the last import. Please try again.");
             } finally {
               setUndoLoading(false);
+            }
+          },
+        },
+      ]
+    );
+  };
+
+  const handleClearBalanceHistory = async () => {
+    if (!user?.id) return;
+
+    Alert.alert(
+      "Clear Balance History",
+      "This will permanently delete all stored balance history snapshots for your account. The balance chart will be empty until new imports build it back up. This cannot be undone.",
+      [
+        { text: "Cancel", style: "cancel" },
+        {
+          text: "Clear History",
+          style: "destructive",
+          onPress: async () => {
+            setClearingHistory(true);
+            try {
+              await clearAllBalanceHistory(user.id);
+              Alert.alert(
+                "Balance History Cleared",
+                "Your local balance history has been cleared. Remote snapshots will be deleted in the background — this may take a few minutes if you have a lot of history."
+              );
+              await fetchHome();
+            } catch (err) {
+              console.error("Failed to clear balance history:", err);
+              Alert.alert("Error", "Failed to clear balance history. Please try again.");
+            } finally {
+              setClearingHistory(false);
             }
           },
         },
@@ -425,6 +466,17 @@ export default function ProfileScreen() {
               {undoLoading ? "Undoing..." : "Undo Last Import"}
             </Text>
             {undoLoading && <ActivityIndicator color="#EF4444" size="small" />}
+          </Pressable>
+          <Pressable
+            onPress={handleClearBalanceHistory}
+            disabled={clearingHistory}
+            className="flex-row items-center justify-center gap-2 bg-amber-50 border border-amber-200 rounded-2xl px-4 py-3 mb-3 active:opacity-70 disabled:opacity-50"
+          >
+            <Feather name="trash-2" size={16} color="#D97706" />
+            <Text className="text-amber-700 font-semibold text-sm">
+              {clearingHistory ? "Clearing..." : "Clear Balance History"}
+            </Text>
+            {clearingHistory && <ActivityIndicator color="#D97706" size="small" />}
           </Pressable>
           {user?.email === "george@georgeoc.com" && (
             <Pressable
