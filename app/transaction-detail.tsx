@@ -139,6 +139,7 @@ export default function TransactionDetailScreen() {
           hideMerchantIcon: (response as any).hideMerchantIcon ?? false,
           importBatchId: (response as any).importBatchId,
           importedAt: (response as any).importedAt,
+          originalAmount: (response as any).originalAmount ?? undefined,
         };
         
         isQueued = false;
@@ -254,12 +255,16 @@ export default function TransactionDetailScreen() {
       setSaving(true);
       const amount = Math.round(parseFloat(editedAmount) * 100);
 
+      // Preserve the original import amount for deduplication — set it the first time
+      // an imported transaction's amount is changed (if not already recorded).
+      const originalAmount = transaction.originalAmount ?? transaction.amount;
+
       if (isQueuedTransaction) {
         // Update queued transaction in AsyncStorage
         const queuedTxs = await getQueuedTransactions();
         const updated = queuedTxs.map(t =>
           t.id === id
-            ? { ...t, title: editedTitle, amount, excludeFromAnalytics: editedExcludeFromAnalytics, displayName: editedDisplayName, hideMerchantIcon: editedHideMerchantIcon }
+            ? { ...t, title: editedTitle, amount, excludeFromAnalytics: editedExcludeFromAnalytics, displayName: editedDisplayName, hideMerchantIcon: editedHideMerchantIcon, originalAmount }
             : t
         );
         await AsyncStorage.setItem("budget_app_sync_queue", JSON.stringify(updated));
@@ -277,6 +282,7 @@ export default function TransactionDetailScreen() {
             excludeFromAnalytics: editedExcludeFromAnalytics,
             displayName: editedDisplayName,
             hideMerchantIcon: editedHideMerchantIcon,
+            originalAmount,
           }
         );
       }
@@ -1007,33 +1013,39 @@ export default function TransactionDetailScreen() {
 
       {/* Fixed Bottom Buttons (Edit Mode) */}
       {isEditing && (
-        <View className="absolute bottom-0 left-0 right-0 px-5 py-4 bg-white border-t border-gray-200 gap-3">
-          <Pressable
-            onPress={handleSave}
-            disabled={saving}
-            className="bg-primary rounded-2xl py-4 items-center active:opacity-70 disabled:opacity-50"
-          >
-            {saving ? (
-              <ActivityIndicator color="white" />
-            ) : (
-              <Text className="text-white font-semibold">Save Changes</Text>
-            )}
-          </Pressable>
+        <KeyboardAvoidingView
+          behavior={Platform.OS === "ios" ? "padding" : undefined}
+          keyboardVerticalOffset={0}
+          style={{ position: "absolute", left: 0, right: 0, bottom: 0 }}
+        >
+          <View className="px-5 py-4 bg-white border-t border-gray-200 gap-3">
+            <Pressable
+              onPress={handleSave}
+              disabled={saving}
+              className="bg-primary rounded-2xl py-4 items-center active:opacity-70 disabled:opacity-50"
+            >
+              {saving ? (
+                <ActivityIndicator color="white" />
+              ) : (
+                <Text className="text-white font-semibold">Save Changes</Text>
+              )}
+            </Pressable>
 
-          <Pressable
-            onPress={() => {
-              setIsEditing(false);
-              setEditedTitle(transaction.title);
-              setEditedDisplayName(transaction.displayName || transaction.title);
-              setEditedAmount((transaction.amount / 100).toString());
-              setEditedExcludeFromAnalytics(transaction.excludeFromAnalytics || false);
-              setEditedHideMerchantIcon(transaction.hideMerchantIcon || false);
-            }}
-            className="border border-gray-300 rounded-2xl py-4 items-center active:opacity-70"
-          >
-            <Text className="text-dark-100 font-semibold">Cancel</Text>
-          </Pressable>
-        </View>
+            <Pressable
+              onPress={() => {
+                setIsEditing(false);
+                setEditedTitle(transaction.title);
+                setEditedDisplayName(transaction.displayName || transaction.title);
+                setEditedAmount((transaction.amount / 100).toString());
+                setEditedExcludeFromAnalytics(transaction.excludeFromAnalytics || false);
+                setEditedHideMerchantIcon(transaction.hideMerchantIcon || false);
+              }}
+              className="border border-gray-300 rounded-2xl py-4 items-center active:opacity-70"
+            >
+              <Text className="text-dark-100 font-semibold">Cancel</Text>
+            </Pressable>
+          </View>
+        </KeyboardAvoidingView>
       )}
 
       {/* Category Dropdown Modal */}
