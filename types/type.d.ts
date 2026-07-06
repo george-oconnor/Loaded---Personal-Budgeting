@@ -44,7 +44,13 @@ export type QuickAction = {
   icon: string; // icon name from Feather glyphMap
 };
 
-export type SessionStatus = "idle" | "loading" | "authenticated" | "unauthenticated" | "error";
+export type SessionStatus =
+  | "idle"
+  | "loading"
+  | "authenticated"
+  | "unauthenticated"
+  | "icloud-unavailable"
+  | "error";
 
 export type SessionUser = {
   id: string;
@@ -61,6 +67,8 @@ export type SessionState = {
   error: string | null;
   checkSession: () => Promise<void>;
   login: (email: string, password: string) => Promise<void>;
+  loginWithApple: () => Promise<void>;
+  recheckICloud: () => Promise<void>;
   signup: (email: string, password: string, firstName: string, lastName: string) => Promise<void>;
   logout: () => Promise<void>;
   deleteAccount: () => Promise<{ success: boolean; error?: string }>;

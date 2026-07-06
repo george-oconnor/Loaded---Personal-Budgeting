@@ -1,3 +1,4 @@
+import { ICloudGate } from "@/components/ICloudGate";
 import { NotificationTray } from "@/components/NotificationTray";
 import { useAutoSync } from "@/hooks/useAutoSync";
 import { useNotificationResponse, useNotifications } from "@/hooks/useNotifications";
@@ -420,6 +421,7 @@ export default function RootLayout() {
           <Stack.Screen name="(tabs)" options={{ gestureEnabled: false }} />
         </Stack>
         <NotificationTray />
+        {status === "icloud-unavailable" && <ICloudGate />}
       </GestureHandlerRootView>
     </ErrorBoundary>
   );

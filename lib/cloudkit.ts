@@ -70,6 +70,11 @@ export async function getCloudKitAccountStatus() {
   return native().getAccountStatus();
 }
 
+/** Public entry point for the auth flow to provision the user's data zone. */
+export async function ensureUserZone(): Promise<void> {
+  return ensureZone();
+}
+
 let zoneReady: Promise<void> | null = null;
 async function ensureZone(): Promise<void> {
   if (!zoneReady) {
@@ -1282,6 +1287,54 @@ export async function deleteSubscription(docId: string) {
   if (result.failed.length > 0) {
     throw new Error(result.failed[0].message);
   }
+}
+
+// ============================================================
+// Migration support (Appwrite -> CloudKit, one-time per user)
+// ============================================================
+
+const MIGRATION_FIELDS: FieldTypes = {
+  migratedAt: 'date',
+  appwriteUserId: 'string',
+  counts: 'string', // JSON string of per-collection counts
+};
+
+export type MigrationStateDoc = {
+  migratedAt: string;
+  appwriteUserId?: string;
+  counts?: Record<string, number>;
+};
+
+export async function getMigrationState(): Promise<MigrationStateDoc | null> {
+  const doc = await fetchOne('migration', MIGRATION_FIELDS);
+  if (!doc) return null;
+  return {
+    migratedAt: doc.migratedAt,
+    appwriteUserId: doc.appwriteUserId,
+    counts: doc.counts ? JSON.parse(doc.counts) : undefined,
+  };
+}
+
+export async function setMigrationState(appwriteUserId: string, counts: Record<string, number>): Promise<void> {
+  await saveOne(
+    'MigrationState',
+    'migration',
+    { migratedAt: new Date().toISOString(), appwriteUserId, counts: JSON.stringify(counts) },
+    MIGRATION_FIELDS,
+    'allKeys',
+    'setMigrationState'
+  );
+}
+
+/**
+ * Writes a subscription with a recordName derived from its Appwrite id so a
+ * re-run overwrites rather than duplicates. Returns the new CloudKit id, which
+ * the migration uses to remap transactions' subscriptionId.
+ */
+export async function migrateSubscription(oldId: string, data: Omit<SubscriptionDoc, 'userId'>): Promise<string> {
+  const recordName = `sub_${oldId}`;
+  await saveOne('Subscription', recordName, data, SUBSCRIPTION_FIELDS, 'allKeys', 'migrateSubscription');
+  return recordName;
 }
 
 // ============================================================
