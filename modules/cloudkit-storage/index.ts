@@ -96,12 +96,16 @@ interface CloudKitStorageType {
     db: DatabaseScope,
     zoneName: string | null,
     recordType: string,
-    filters: Filter[],
-    sorts: Sort[],
-    limit: number,
-    cursor: string | null,
-    desiredKeys: string[] | null
+    options: QueryOptions
   ): Promise<{ records: RecordOutput[]; cursor: string | null }>;
+}
+
+export interface QueryOptions {
+  filters?: Filter[];
+  sorts?: Sort[];
+  limit?: number;
+  cursor?: string | null;
+  desiredKeys?: string[] | null;
 }
 
 let CloudKitStorage: CloudKitStorageType | null = null;

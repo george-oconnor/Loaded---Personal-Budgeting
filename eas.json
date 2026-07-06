@@ -40,6 +40,7 @@
     "preview3": {
       "extends": "_base",
       "developmentClient": true,
+      "distribution": "internal",
       "env": {
         "EXPO_PUBLIC_BACKEND": "cloudkit"
       }

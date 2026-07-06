@@ -182,10 +182,17 @@ public class CloudKitStorageModule: Module {
       }
     }
 
-    AsyncFunction("queryRecords") { (db: String, zoneName: String?, recordType: String, filters: [[String: Any]], sorts: [[String: Any]], limit: Int, cursor: String?, desiredKeys: [String]?, promise: Promise) in
+    // Options bundle the query params (filters/sorts/limit/cursor/desiredKeys)
+    // to stay within Expo's per-function argument limit.
+    AsyncFunction("queryRecords") { (db: String, zoneName: String?, recordType: String, options: [String: Any], promise: Promise) in
       Task {
         do {
           let database = try Self.database(db)
+          let filters = options["filters"] as? [[String: Any]] ?? []
+          let sorts = options["sorts"] as? [[String: Any]] ?? []
+          let limit = (options["limit"] as? NSNumber)?.intValue ?? 0
+          let cursor = options["cursor"] as? String
+          let desiredKeys = options["desiredKeys"] as? [String]
           let resultsLimit = limit > 0 ? limit : CKQueryOperation.maximumResults
           let keys = desiredKeys.map { $0.map { CKRecord.FieldKey($0) } }
 

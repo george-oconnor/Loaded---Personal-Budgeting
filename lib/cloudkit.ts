@@ -337,16 +337,13 @@ async function queryPage(
   await ensureZone();
   const res = await withRetry(
     () =>
-      native().queryRecords(
-        'private',
-        ZONE,
-        recordType,
-        options.filters ?? [],
-        options.sorts ?? [],
-        options.limit ?? 0,
-        options.cursor ?? null,
-        options.desiredKeys ?? null
-      ),
+      native().queryRecords('private', ZONE, recordType, {
+        filters: options.filters ?? [],
+        sorts: options.sorts ?? [],
+        limit: options.limit ?? 0,
+        cursor: options.cursor ?? null,
+        desiredKeys: options.desiredKeys ?? null,
+      }),
     `query ${recordType}`
   );
   return { docs: res.records.map((r) => decodeRecord(r, types)), cursor: res.cursor };
@@ -1327,7 +1324,7 @@ async function getAllVotes(recordType: 'MerchantVote' | 'IconVote'): Promise<Pub
   let cursor: string | null = null;
   do {
     const res = await withRetry(
-      () => native().queryRecords('public', null, recordType, [], [], 400, cursor, null),
+      () => native().queryRecords('public', null, recordType, { limit: 400, cursor }),
       `query ${recordType}`
     );
     all.push(...res.records.map((r) => decodeRecord(r, VOTE_FIELDS)));

@@ -111,7 +111,8 @@ enum CKRecordCoder {
       return ["type": "date", "value": formatDate(d)]
     }
     if let n = value as? NSNumber {
-      if CFNumberIsFloatType(n) {
+      // NSNumber is toll-free bridged with CFNumber but Swift needs the explicit cast.
+      if CFNumberIsFloatType(n as CFNumber) {
         return ["type": "double", "value": n.doubleValue]
       }
       return ["type": "int", "value": n.int64Value]
@@ -156,7 +157,9 @@ enum CKQueryBuilder {
           throw CloudKitStorageError.invalidInput("'in' filter requires an array value")
         }
         let values = try rawValues.map { try CKRecordCoder.decodeFieldValue($0) }
-        predicates.append(NSPredicate(format: "%K IN %@", field, values))
+        // argumentArray avoids the CVarArg requirement of the variadic
+        // NSPredicate(format:) — __CKRecordObjCValue does not conform to CVarArg.
+        predicates.append(NSPredicate(format: "%K IN %@", argumentArray: [field, values]))
         continue
       }
 
@@ -172,7 +175,7 @@ enum CKQueryBuilder {
       default:
         throw CloudKitStorageError.invalidInput("Unsupported filter op: \(op) (CloudKit has no !=/OR support)")
       }
-      predicates.append(NSPredicate(format: format, field, value))
+      predicates.append(NSPredicate(format: format, argumentArray: [field, value]))
     }
 
     return predicates.count == 1
