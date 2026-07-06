@@ -1,7 +1,7 @@
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import * as Notifications from 'expo-notifications';
 import { AppState } from 'react-native';
-import { getAccountImports, getUserPreferences, saveAccountImport, saveUserPreferences } from './appwrite';
+import { getAccountImports, getUserPreferences, saveAccountImport, saveUserPreferences } from './backend';
 import { formatCurrency } from './currencyFunctions';
 import { captureException } from './sentry';
 

@@ -1,4 +1,4 @@
-import { getTransactionsInRangeAll } from "@/lib/appwrite";
+import { getTransactionsInRangeAll } from "@/lib/backend";
 import { getMerchantIconUrl, getSuggestedMerchantIcon } from "@/lib/merchantIcons";
 import { useHomeStore } from "@/store/useHomeStore";
 import { useSessionStore } from "@/store/useSessionStore";

@@ -1,5 +1,5 @@
 import TransactionListItem from "@/components/TransactionListItem";
-import { databases, getTransactionsPaginated, TransactionFilter } from "@/lib/appwrite";
+import { getTransactionsPaginated, TransactionFilter, updateTransactionFields } from "@/lib/backend";
 import { getQueuedTransactions } from "@/lib/syncQueue";
 import { useHomeStore } from "@/store/useHomeStore";
 import { useSessionStore } from "@/store/useSessionStore";
@@ -165,15 +165,7 @@ export default function AllTransactionsScreen() {
 
   const handleExcludeFromAnalytics = async (transaction: Transaction) => {
     try {
-      const databaseId = process.env.EXPO_PUBLIC_APPWRITE_DATABASE_ID as string;
-      const transactionsTableId = (process.env.EXPO_PUBLIC_APPWRITE_TABLE_TRANSACTIONS || process.env.EXPO_PUBLIC_APPWRITE_COLLECTION_TRANSACTIONS) as string;
-      
-      await databases.updateDocument(
-        databaseId,
-        transactionsTableId,
-        transaction.id,
-        { excludeFromAnalytics: true }
-      );
+      await updateTransactionFields(transaction.id, { excludeFromAnalytics: true });
 
       // Refresh the list
       await loadTransactions(true);

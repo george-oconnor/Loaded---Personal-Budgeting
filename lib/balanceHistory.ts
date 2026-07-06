@@ -7,7 +7,7 @@ import {
   isBalanceHistoryConfigured,
   upsertBalanceHistoryEntries,
   type BalanceHistoryDoc,
-} from './appwrite';
+} from './backend';
 import { isRateLimitError } from './appwriteThrottle';
 
 const LOCAL_KEY = 'budget_app_balance_history';

@@ -1,5 +1,5 @@
 import TransactionListItem from "@/components/TransactionListItem";
-import { databases } from "@/lib/appwrite";
+import { updateTransactionFields } from "@/lib/backend";
 import { getCycleEndDateForCycleStart, getCycleStartDateWithOffset } from "@/lib/budgetCycle";
 import { formatCurrency } from "@/lib/currencyFunctions";
 import { useHomeStore } from "@/store/useHomeStore";
@@ -166,15 +166,7 @@ export default function CategoryTransactionsScreen() {
 
   const handleExcludeFromAnalytics = async (transaction: Transaction) => {
     try {
-      const databaseId = process.env.EXPO_PUBLIC_APPWRITE_DATABASE_ID as string;
-      const transactionsTableId = (process.env.EXPO_PUBLIC_APPWRITE_TABLE_TRANSACTIONS || process.env.EXPO_PUBLIC_APPWRITE_COLLECTION_TRANSACTIONS) as string;
-      
-      await databases.updateDocument(
-        databaseId,
-        transactionsTableId,
-        transaction.id,
-        { excludeFromAnalytics: true }
-      );
+      await updateTransactionFields(transaction.id, { excludeFromAnalytics: true });
 
       // Refresh home store to reflect analytics changes
       const { fetchHome } = useHomeStore.getState();

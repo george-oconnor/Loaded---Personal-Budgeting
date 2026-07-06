@@ -1,4 +1,4 @@
-import { getMonthlyBudget, updateMonthlyBudget } from "@/lib/appwrite";
+import { getMonthlyBudget, updateMonthlyBudget } from "@/lib/backend";
 import { getCycleEndDateForCycleStart, getCycleStartDateWithOffset } from "@/lib/budgetCycle";
 import { useHomeStore } from "@/store/useHomeStore";
 import { useSessionStore } from "@/store/useSessionStore";

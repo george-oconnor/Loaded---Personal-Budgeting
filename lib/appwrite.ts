@@ -1188,6 +1188,27 @@ export async function updateTransaction(
   }
 }
 
+export async function getTransactionById(transactionId: string) {
+  if (!databaseId || !transactionsTableId) throw new Error("Appwrite env not configured");
+  try {
+    return await databases.getDocument(databaseId, transactionsTableId, transactionId);
+  } catch (err) {
+    if ((err as any)?.code === 404) return null;
+    throw err;
+  }
+}
+
+/** Generic partial update — accepts any Transaction fields (title, amount, date, ...). */
+export async function updateTransactionFields(transactionId: string, updates: Record<string, any>) {
+  if (!databaseId || !transactionsTableId) throw new Error("Appwrite env not configured");
+  return await databases.updateDocument(databaseId, transactionsTableId, transactionId, updates);
+}
+
+export async function deleteTransaction(transactionId: string): Promise<void> {
+  if (!databaseId || !transactionsTableId) throw new Error("Appwrite env not configured");
+  await databases.deleteDocument(databaseId, transactionsTableId, transactionId);
+}
+
 export type BulkCreateResult = {
   created: number;
   failed: number;

@@ -7,7 +7,7 @@ import {
   updateSubscription,
   updateTransaction,
   type SubscriptionDoc,
-} from "@/lib/appwrite";
+} from "@/lib/backend";
 import { cancelSubscriptionReminder, scheduleSubscriptionReminder } from "@/lib/notifications";
 import { detectRecurringPayments, estimateNextDate, type RecurringFrequency, type RecurringPayment } from "@/lib/recurringPayments";
 import { captureException } from "@/lib/sentry";

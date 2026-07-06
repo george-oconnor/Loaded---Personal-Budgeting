@@ -1,4 +1,4 @@
-import type { SubscriptionDoc } from "./appwrite";
+import type { SubscriptionDoc } from "./backend";
 
 type SubscriptionLike = SubscriptionDoc & { id: string };
 

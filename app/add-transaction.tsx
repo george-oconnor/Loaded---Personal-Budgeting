@@ -1,4 +1,4 @@
-import { getCategories } from "@/lib/appwrite";
+import { getCategories } from "@/lib/backend";
 import { queueTransactionsForSync } from "@/lib/syncQueue";
 import { useSessionStore } from "@/store/useSessionStore";
 import { router } from "expo-router";

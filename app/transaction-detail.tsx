@@ -1,4 +1,4 @@
-import { databases } from "@/lib/appwrite";
+import { deleteTransaction, getTransactionById, updateTransactionFields } from "@/lib/backend";
 import { learnMerchantCategory } from "@/lib/categorization";
 import { formatCurrency } from "@/lib/currencyFunctions";
 import { getMerchantIconUrl, getSuggestedMerchantIcon, suggestMerchantIcon } from "@/lib/merchantIcons";
@@ -113,14 +113,8 @@ export default function TransactionDetailScreen() {
       
       // Try to load from database first (takes precedence over queue)
       try {
-        const databaseId = process.env.EXPO_PUBLIC_APPWRITE_DATABASE_ID as string;
-        const transactionsTableId = (process.env.EXPO_PUBLIC_APPWRITE_TABLE_TRANSACTIONS || process.env.EXPO_PUBLIC_APPWRITE_COLLECTION_TRANSACTIONS) as string;
-        if (!databaseId || !transactionsTableId) throw new Error("Appwrite env not configured");
-        const response = await databases.getDocument(
-          databaseId,
-          transactionsTableId,
-          id
-        );
+        const response = await getTransactionById(id);
+        if (!response) throw new Error("Transaction not found in database");
 
         dbTx = {
           id: response.$id,
@@ -178,14 +172,7 @@ export default function TransactionDetailScreen() {
               await AsyncStorage.setItem("budget_app_sync_queue", JSON.stringify(updated));
             } else {
               // Update database transaction
-              const databaseId = process.env.EXPO_PUBLIC_APPWRITE_DATABASE_ID as string;
-              const transactionsTableId = (process.env.EXPO_PUBLIC_APPWRITE_TABLE_TRANSACTIONS || process.env.EXPO_PUBLIC_APPWRITE_COLLECTION_TRANSACTIONS) as string;
-              await databases.updateDocument(
-                databaseId,
-                transactionsTableId,
-                id!,
-                updates
-              );
+              await updateTransactionFields(id!, updates);
             }
             // Update local state
             dbTx = { ...dbTx, ...updates };
@@ -270,21 +257,14 @@ export default function TransactionDetailScreen() {
         await AsyncStorage.setItem("budget_app_sync_queue", JSON.stringify(updated));
       } else {
         // Update database transaction
-        const databaseId = process.env.EXPO_PUBLIC_APPWRITE_DATABASE_ID as string;
-        const transactionsTableId = (process.env.EXPO_PUBLIC_APPWRITE_TABLE_TRANSACTIONS || process.env.EXPO_PUBLIC_APPWRITE_COLLECTION_TRANSACTIONS) as string;
-        await databases.updateDocument(
-          databaseId,
-          transactionsTableId,
-          id!,
-          {
-            title: editedTitle,
-            amount,
-            excludeFromAnalytics: editedExcludeFromAnalytics,
-            displayName: editedDisplayName,
-            hideMerchantIcon: editedHideMerchantIcon,
-            originalAmount,
-          }
-        );
+        await updateTransactionFields(id!, {
+          title: editedTitle,
+          amount,
+          excludeFromAnalytics: editedExcludeFromAnalytics,
+          displayName: editedDisplayName,
+          hideMerchantIcon: editedHideMerchantIcon,
+          originalAmount,
+        });
       }
 
       setTransaction({
@@ -320,13 +300,7 @@ export default function TransactionDetailScreen() {
         await AsyncStorage.setItem("budget_app_sync_queue", JSON.stringify(updated));
       } else {
         // Delete database transaction
-        const databaseId = process.env.EXPO_PUBLIC_APPWRITE_DATABASE_ID as string;
-        const transactionsTableId = (process.env.EXPO_PUBLIC_APPWRITE_TABLE_TRANSACTIONS || process.env.EXPO_PUBLIC_APPWRITE_COLLECTION_TRANSACTIONS) as string;
-        await databases.deleteDocument(
-          databaseId,
-          transactionsTableId,
-          id!
-        );
+        await deleteTransaction(id!);
       }
       router.back();
     } catch (error) {
@@ -350,14 +324,7 @@ export default function TransactionDetailScreen() {
         await AsyncStorage.setItem("budget_app_sync_queue", JSON.stringify(updated));
       } else {
         // Update database transaction
-        const databaseId = process.env.EXPO_PUBLIC_APPWRITE_DATABASE_ID as string;
-        const transactionsTableId = (process.env.EXPO_PUBLIC_APPWRITE_TABLE_TRANSACTIONS || process.env.EXPO_PUBLIC_APPWRITE_COLLECTION_TRANSACTIONS) as string;
-        await databases.updateDocument(
-          databaseId,
-          transactionsTableId,
-          id!,
-          { categoryId: newCategoryId }
-        );
+        await updateTransactionFields(id!, { categoryId: newCategoryId });
       }
 
       // Learn this merchant-category mapping for future imports
@@ -401,14 +368,7 @@ export default function TransactionDetailScreen() {
         await AsyncStorage.setItem("budget_app_sync_queue", JSON.stringify(updated));
       } else {
         // Update database transaction
-        const databaseId = process.env.EXPO_PUBLIC_APPWRITE_DATABASE_ID as string;
-        const transactionsTableId = (process.env.EXPO_PUBLIC_APPWRITE_TABLE_TRANSACTIONS || process.env.EXPO_PUBLIC_APPWRITE_COLLECTION_TRANSACTIONS) as string;
-        await databases.updateDocument(
-          databaseId,
-          transactionsTableId,
-          id!,
-          { hideMerchantIcon: newValue }
-        );
+        await updateTransactionFields(id!, { hideMerchantIcon: newValue });
       }
 
       // Update the transaction state
@@ -456,14 +416,7 @@ export default function TransactionDetailScreen() {
         await AsyncStorage.setItem("budget_app_sync_queue", JSON.stringify(updated));
       } else {
         // Update database transaction
-        const databaseId = process.env.EXPO_PUBLIC_APPWRITE_DATABASE_ID as string;
-        const transactionsTableId = (process.env.EXPO_PUBLIC_APPWRITE_TABLE_TRANSACTIONS || process.env.EXPO_PUBLIC_APPWRITE_COLLECTION_TRANSACTIONS) as string;
-        await databases.updateDocument(
-          databaseId,
-          transactionsTableId,
-          id!,
-          { excludeFromAnalytics: newValue }
-        );
+        await updateTransactionFields(id!, { excludeFromAnalytics: newValue });
       }
 
       // Update the transaction state

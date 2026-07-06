@@ -5,10 +5,10 @@ import {
     useNotificationStore
 } from '@/store/useNotificationStore';
 import AsyncStorage from '@react-native-async-storage/async-storage';
-import { ID, Query } from 'appwrite';
 import * as Notifications from 'expo-notifications';
 import { AppState } from 'react-native';
-import { createBulkTransactions, databases } from './appwrite';
+import { createBulkTransactions, getTransactionsPaginated } from './backend';
+import { ID } from './ids';
 import { getDeleteStatus } from './deleteQueue';
 import { areNotificationsEnabled } from './notifications';
 import { addBreadcrumb, captureException } from './sentry';
@@ -210,14 +210,10 @@ export async function cleanupSyncQueue(userId: string): Promise<void> {
     }
 
     // Check if user has any transactions in the database
-    const response = await databases.listDocuments(
-      process.env.EXPO_PUBLIC_APPWRITE_DATABASE_ID,
-      process.env.EXPO_PUBLIC_APPWRITE_TABLE_TRANSACTIONS || process.env.EXPO_PUBLIC_APPWRITE_COLLECTION_TRANSACTIONS,
-      [Query.equal("userId", userId), Query.limit(1)]
-    );
+    const response = await getTransactionsPaginated(userId, 1);
 
     // If user has no transactions, clear the entire sync queue
-    if (response.total === 0) {
+    if (response.documents.length === 0) {
       await AsyncStorage.removeItem(SYNC_QUEUE_KEY);
       await resetSyncStatus();
       return;

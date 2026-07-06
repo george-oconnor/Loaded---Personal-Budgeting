@@ -1,6 +1,6 @@
 import { restoreLastBalanceSnapshot } from "@/lib/accountBalances";
 import { clearAllBalanceHistory, deleteBalanceHistoryForBatch } from "@/lib/balanceHistory";
-import { deleteTransactionsByBatchId, getLastImportBatchId } from "@/lib/appwrite";
+import { deleteTransactionsByBatchId, getLastImportBatchId } from "@/lib/backend";
 import { queueDeleteAll } from "@/lib/deleteQueue";
 import {
     areNotificationsEnabled,

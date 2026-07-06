@@ -1,4 +1,4 @@
-import { createAccount, createUserProfile, deleteUserAccount, getCurrentSession, getCurrentUser, signIn, signOut, updateUserProfile } from "@/lib/appwrite";
+import { createAccount, createUserProfile, deleteUserAccount, getCurrentSession, getCurrentUser, signIn, signOut, updateUserProfile } from "@/lib/backend";
 import { queueDeleteAll } from "@/lib/deleteQueue";
 import { addBreadcrumb, captureException, clearUser as clearSentryUser, setUser as setSentryUser } from "@/lib/sentry";
 import type { SessionState } from "@/types/type";

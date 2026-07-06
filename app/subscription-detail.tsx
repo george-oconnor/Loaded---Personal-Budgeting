@@ -1,5 +1,5 @@
 import TransactionListItem from "@/components/TransactionListItem";
-import { updateTransaction } from "@/lib/appwrite";
+import { updateTransaction } from "@/lib/backend";
 import { formatCurrency } from "@/lib/currencyFunctions";
 import { getMerchantIconUrl, getSuggestedMerchantIcon } from "@/lib/merchantIcons";
 import { getFrequencyLabel, type RecurringFrequency } from "@/lib/recurringPayments";

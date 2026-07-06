@@ -1,4 +1,4 @@
-import { getTransactionsInRangeAll } from "@/lib/appwrite";
+import { getTransactionsInRangeAll } from "@/lib/backend";
 import { formatCurrency } from "@/lib/currencyFunctions";
 import { getMerchantIconUrl, getSuggestedMerchantIcon } from "@/lib/merchantIcons";
 import {

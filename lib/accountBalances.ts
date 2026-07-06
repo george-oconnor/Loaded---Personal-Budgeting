@@ -1,5 +1,5 @@
 import AsyncStorage from '@react-native-async-storage/async-storage';
-import { deleteAccountBalanceDoc, upsertAccountBalance } from './appwrite';
+import { deleteAccountBalanceDoc, upsertAccountBalance } from './backend';
 
 const ACCOUNT_BALANCES_KEY = 'budget_app_account_balances';
 

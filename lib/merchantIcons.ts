@@ -5,6 +5,8 @@
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { ID, Permission, Query, Role } from 'appwrite';
 import { databases } from './appwrite';
+import { USE_CLOUDKIT } from './backend';
+import { castIconVote, getAllIconVotes } from './cloudkit';
 
 const ICON_SUGGESTIONS_KEY = 'budget_app_icon_suggestions';
 const databaseId = process.env.EXPO_PUBLIC_APPWRITE_DATABASE_ID;
@@ -30,6 +32,32 @@ function getMerchantKey(title: string): string {
  */
 async function getCrowdSourcedIcons(): Promise<IconMapping> {
   try {
+    if (USE_CLOUDKIT) {
+      // One record per (voter, merchant) in the CloudKit public DB — count
+      // records per icon URL and pick the most popular per merchant.
+      const votes = await getAllIconVotes();
+      const votesByMerchant = new Map<string, Map<string, number>>();
+      for (const vote of votes) {
+        if (!vote.merchantKey || !vote.iconUrl) continue;
+        const urlVotes = votesByMerchant.get(vote.merchantKey) ?? new Map<string, number>();
+        urlVotes.set(vote.iconUrl, (urlVotes.get(vote.iconUrl) || 0) + 1);
+        votesByMerchant.set(vote.merchantKey, urlVotes);
+      }
+      const mappings: IconMapping = {};
+      votesByMerchant.forEach((urlVotes, merchantKey) => {
+        let topUrl = '';
+        let topVotes = 0;
+        urlVotes.forEach((count, url) => {
+          if (count > topVotes) {
+            topVotes = count;
+            topUrl = url;
+          }
+        });
+        if (topUrl) mappings[merchantKey] = topUrl;
+      });
+      return mappings;
+    }
+
     if (!databaseId || !iconVotesTableId) {
       // Fallback to AsyncStorage if database not configured
       console.log('[Icon Debug] Database not configured, falling back to AsyncStorage');
@@ -132,8 +160,19 @@ export async function suggestMerchantIcon(
   try {
     const merchantKey = getMerchantKey(merchantName);
 
+    if (USE_CLOUDKIT) {
+      try {
+        await castIconVote(merchantKey, merchantName, iconUrl);
+      } catch (dbError) {
+        console.error('Error saving icon vote to CloudKit:', dbError);
+        // Fallback to AsyncStorage
+        const mappings = await getCrowdSourcedIcons();
+        mappings[merchantKey] = iconUrl;
+        await AsyncStorage.setItem(ICON_SUGGESTIONS_KEY, JSON.stringify(mappings));
+      }
+    }
     // Save to database if configured (for crowd-sourcing)
-    if (databaseId && iconVotesTableId) {
+    else if (databaseId && iconVotesTableId) {
       try {
         // Check if this merchant-icon vote already exists
         const existing = await databases.listDocuments(databaseId, iconVotesTableId, [

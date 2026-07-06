@@ -1,6 +1,6 @@
 import { saveBalanceSnapshot, updateAccountBalance, upsertBalanceRemote } from "@/lib/accountBalances";
 import { recordImportBalanceHistory } from "@/lib/balanceHistory";
-import { getAllTransactionsForUser, getConfirmedSubscriptions, updateTransaction } from "@/lib/appwrite";
+import { getAllTransactionsForUser, getConfirmedSubscriptions, updateTransaction } from "@/lib/backend";
 import { getTransferCategoryId } from "@/lib/categorization";
 import { detectTransferPairs, ParsedTransaction } from "@/lib/csvParser";
 import { formatCurrency } from "@/lib/currencyFunctions";
@@ -9,7 +9,7 @@ import { queueTransactionsForSync } from "@/lib/syncQueue";
 import { matchTransactionToSubscription } from "@/lib/subscriptionMatcher";
 import { useSessionStore } from "@/store/useSessionStore";
 import { Feather } from "@expo/vector-icons";
-import { ID } from "appwrite";
+import { ID } from "@/lib/ids";
 import { router, useLocalSearchParams } from "expo-router";
 import { useEffect, useRef, useState } from "react";
 import {

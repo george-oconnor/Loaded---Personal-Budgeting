@@ -6,15 +6,16 @@ import {
     useNotificationStore
 } from '@/store/useNotificationStore';
 import AsyncStorage from "@react-native-async-storage/async-storage";
-import { Query } from "appwrite";
 import * as Notifications from 'expo-notifications';
 import { AppState } from "react-native";
-import { databases } from "./appwrite";
+import {
+    deleteAllTransactionsForUser,
+    deleteTransaction,
+    getTransactionsPaginated,
+    USE_CLOUDKIT,
+} from "./backend";
 import { areNotificationsEnabled } from './notifications';
 import { captureException, captureMessage } from './sentry';
-
-const DATABASE_ID = process.env.EXPO_PUBLIC_APPWRITE_DATABASE_ID;
-const TRANSACTION_COLLECTION_ID = process.env.EXPO_PUBLIC_APPWRITE_TABLE_TRANSACTIONS || process.env.EXPO_PUBLIC_APPWRITE_COLLECTION_TRANSACTIONS;
 
 const DELETE_QUEUE_KEY = "delete_queue";
 const DELETE_STATUS_KEY = "delete_status";
@@ -125,29 +126,41 @@ export async function startDeletingTransactions(
 
     console.log("Starting delete operation for user:", operation.userId);
     
-    // First, count total transactions to delete
-    let totalToDelete = 0;
-    try {
-      const countResponse = await databases.listDocuments(
-        DATABASE_ID,
-        TRANSACTION_COLLECTION_ID,
-        [Query.equal("userId", operation.userId), Query.limit(1)]
-      );
-      totalToDelete = countResponse.total || 0;
-      console.log(`Deleting ${totalToDelete} transactions`);
-    } catch (error) {
-      console.error("Error counting transactions:", error);
-      captureException(error instanceof Error ? error : new Error('Error counting transactions'), {
-        tags: { feature: 'delete_queue', operation: 'processDeleteOperation' },
-        contexts: { delete_operation: { userId: operation.userId } }
-      });
-      totalToDelete = 0;
-    }
-    
+    // No cheap server-side count through the backend seam — progress
+    // notifications that depend on a total are skipped when it's 0.
+    const totalToDelete = 0;
+
     await updateDeleteStatus({ status: "in-progress", totalToDelete });
     onProgressUpdate?.(0, "in-progress");
 
     let totalDeleted = 0;
+
+    if (USE_CLOUDKIT) {
+      // CloudKit batch-deletes up to 400 records per operation and has no
+      // Appwrite-style rate limits — one call replaces the throttled crawl.
+      const result = await deleteAllTransactionsForUser(operation.userId);
+      totalDeleted = result.deleted;
+      if (result.failed > 0) {
+        throw new Error(`${result.failed} transactions failed to delete`);
+      }
+      console.log(`Delete completed. Total deleted: ${totalDeleted}`);
+      await updateDeleteStatus({ status: "completed", totalDeleted });
+      onProgressUpdate?.(totalDeleted, "completed");
+
+      try {
+        const { addNotification } = useNotificationStore.getState();
+        if (totalDeleted > 0) {
+          await addNotification(createDeleteCompleteNotification(totalDeleted));
+        }
+      } catch (notifError) {
+        console.error('Failed to send delete completion notification:', notifError);
+      }
+
+      await AsyncStorage.removeItem(DELETE_QUEUE_KEY);
+      await AsyncStorage.removeItem("budget_app_sync_queue");
+      await resetSyncStatus();
+      return;
+    }
     const batchSize = 1; // Process one at a time to minimize rate limit issues
     const delayBetweenBatches = 2000; // 2 second delay between batches
     const delayBetweenDocuments = 500; // 0.5 second delay between documents
@@ -184,11 +197,7 @@ export async function startDeletingTransactions(
         // Continue processing instead of pausing
       }
 
-      const response = await databases.listDocuments(
-        DATABASE_ID,
-        TRANSACTION_COLLECTION_ID,
-        [Query.equal("userId", operation.userId), Query.limit(batchSize)]
-      );
+      const response = await getTransactionsPaginated(operation.userId, batchSize);
 
       if (response.documents.length === 0) {
         // All done!
@@ -234,12 +243,9 @@ export async function startDeletingTransactions(
       // Delete this batch
       let batchDeleted = 0;
       for (const doc of response.documents) {
+        const docId = (doc as any).$id as string;
         try {
-          await databases.deleteDocument(
-            DATABASE_ID,
-            TRANSACTION_COLLECTION_ID,
-            doc.$id
-          );
+          await deleteTransaction(docId);
           totalDeleted++;
           batchDeleted++;
           
@@ -248,46 +254,42 @@ export async function startDeletingTransactions(
         } catch (error: any) {
           // If document is not found, it was already deleted - count it as success
           if (error.code === 404 || error.message?.includes('could not be found')) {
-            console.log("Document already deleted:", doc.$id);
-            captureMessage(`Document already deleted during batch delete: ${doc.$id}`, 'warning');
+            console.log("Document already deleted:", docId);
+            captureMessage(`Document already deleted during batch delete: ${docId}`, 'warning');
             totalDeleted++;
             batchDeleted++;
-          } 
+          }
           // Handle rate limit errors
-          else if (error.code === 429 || error.type === 'rate_limit_exceeded' || error.message?.includes('rate limit')) {
-            console.warn("Rate limit hit, waiting before retry:", doc.$id);
-            captureException(error, { 
+          else if (error.code === 429 || error.code === 'RATE_LIMITED' || error.type === 'rate_limit_exceeded' || error.message?.includes('rate limit')) {
+            console.warn("Rate limit hit, waiting before retry:", docId);
+            captureException(error, {
               context: 'delete_rate_limit',
-              documentId: doc.$id,
+              documentId: docId,
               totalDeleted,
-              batchSize 
+              batchSize
             });
-            
+
             // Wait longer and retry this document
             await new Promise((resolve) => setTimeout(resolve, 10000)); // 10 second wait
-            
+
             try {
-              await databases.deleteDocument(
-                DATABASE_ID,
-                TRANSACTION_COLLECTION_ID,
-                doc.$id
-              );
+              await deleteTransaction(docId);
               totalDeleted++;
               batchDeleted++;
-              console.log("Successfully deleted after rate limit retry:", doc.$id);
+              console.log("Successfully deleted after rate limit retry:", docId);
             } catch (retryError: any) {
-              console.error("Failed to delete after rate limit retry:", doc.$id, retryError);
-              captureException(retryError, { 
+              console.error("Failed to delete after rate limit retry:", docId, retryError);
+              captureException(retryError, {
                 context: 'delete_rate_limit_retry_failed',
-                documentId: doc.$id 
+                documentId: docId
               });
             }
-          } 
+          }
           else {
-            console.error("Error deleting document:", doc.$id, error);
-            captureException(error, { 
+            console.error("Error deleting document:", docId, error);
+            captureException(error, {
               context: 'delete_error',
-              documentId: doc.$id 
+              documentId: docId
             });
           }
         }

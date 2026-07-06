@@ -4,7 +4,7 @@ import {
     getTransactionsForMonth,
     getTransactionsInRangeAll,
     updateMonthlyBudget,
-} from "@/lib/appwrite";
+} from "@/lib/backend";
 import { getCycleEndDateForCycleStart, getCycleStartDateWithOffset, getTransactionsInCurrentCycle } from "@/lib/budgetCycle";
 import { captureException } from "@/lib/sentry";
 import { getQueuedTransactions } from "@/lib/syncQueue";

@@ -1,6 +1,8 @@
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { ID, Permission, Query, Role } from 'appwrite';
-import { databases, getCategories } from './appwrite';
+import { databases } from './appwrite';
+import { getCategories, USE_CLOUDKIT } from './backend';
+import { castMerchantVote, getAllMerchantVotes } from './cloudkit';
 
 const MERCHANT_MAPPINGS_KEY = 'budget_app_merchant_categories';
 const CATEGORIES_PERSIST_KEY = 'budget_app_categories_cache_v1';
@@ -224,6 +226,32 @@ async function getLearnedMappings(): Promise<MerchantMapping> {
  */
 async function fetchLearnedMappings(): Promise<MerchantMapping> {
   try {
+    if (USE_CLOUDKIT) {
+      // One record per (voter, merchant) in the CloudKit public DB — count
+      // records per category and pick the most popular per merchant.
+      const votes = await getAllMerchantVotes();
+      const votesByMerchant = new Map<string, Map<string, number>>();
+      for (const vote of votes) {
+        if (!vote.merchantKey || !vote.categoryId) continue;
+        const categoryVotes = votesByMerchant.get(vote.merchantKey) ?? new Map<string, number>();
+        categoryVotes.set(vote.categoryId, (categoryVotes.get(vote.categoryId) || 0) + 1);
+        votesByMerchant.set(vote.merchantKey, categoryVotes);
+      }
+      const mappings: MerchantMapping = {};
+      votesByMerchant.forEach((categoryVotes, merchantKey) => {
+        let topCategory = '';
+        let topVotes = 0;
+        categoryVotes.forEach((count, categoryId) => {
+          if (count > topVotes) {
+            topVotes = count;
+            topCategory = categoryId;
+          }
+        });
+        if (topCategory) mappings[merchantKey] = topCategory;
+      });
+      return mappings;
+    }
+
     // Try to get from database first (crowd-sourced)
     if (!databaseId || !merchantVotesTableId) {
       // Fallback to AsyncStorage if database not configured
@@ -326,9 +354,20 @@ async function fetchLearnedMappings(): Promise<MerchantMapping> {
 export async function learnMerchantCategory(merchantName: string, categoryId: string, userId?: string): Promise<void> {
   try {
     const merchantKey = getMerchantKey(merchantName);
-    
+
+    if (USE_CLOUDKIT) {
+      try {
+        await castMerchantVote(merchantKey, merchantName, categoryId);
+      } catch (dbError) {
+        console.error('Error saving merchant vote to CloudKit:', dbError);
+        // Fallback to AsyncStorage
+        const mappings = await getLearnedMappings();
+        mappings[merchantKey] = categoryId;
+        await AsyncStorage.setItem(MERCHANT_MAPPINGS_KEY, JSON.stringify(mappings));
+      }
+    }
     // Save to database if configured (for crowd-sourcing)
-    if (databaseId && merchantVotesTableId) {
+    else if (databaseId && merchantVotesTableId) {
       try {
         // Check if this merchant-category vote already exists
         const existing = await databases.listDocuments(databaseId, merchantVotesTableId, [

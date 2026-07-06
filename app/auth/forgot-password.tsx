@@ -1,4 +1,4 @@
-import { requestPasswordReset } from "@/lib/appwrite";
+import { requestPasswordReset } from "@/lib/backend";
 import { router } from "expo-router";
 import { useState } from "react";
 import { ActivityIndicator, KeyboardAvoidingView, Platform, Pressable, ScrollView, Text, TextInput, View } from "react-native";

@@ -6,6 +6,7 @@
   "build": {
     "_base": {
       "env": {
+        "EXPO_PUBLIC_BACKEND": "appwrite",
         "EXPO_PUBLIC_APPWRITE_ENDPOINT": "https://fra.cloud.appwrite.io/v1",
         "EXPO_PUBLIC_APPWRITE_PROJECT_ID": "69455c28002093139de1",
         "EXPO_PUBLIC_APPWRITE_PROJECT_NAME": "budget-app",
@@ -38,7 +39,10 @@
     },
     "preview3": {
       "extends": "_base",
-      "developmentClient": true
+      "developmentClient": true,
+      "env": {
+        "EXPO_PUBLIC_BACKEND": "cloudkit"
+      }
     },
     "production": {
       "extends": "_base",

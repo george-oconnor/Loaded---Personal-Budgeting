@@ -1,6 +1,6 @@
 import { resolveAccountInfo, updateAccountBalance, upsertBalanceRemote } from "@/lib/accountBalances";
 import { recordImportBalanceHistory } from "@/lib/balanceHistory";
-import { ID } from "appwrite";
+import { ID } from "@/lib/ids";
 import {
     convertRevolutToAppTransaction,
     markTransfers,
