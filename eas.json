@@ -42,13 +42,17 @@
       "developmentClient": true,
       "distribution": "internal",
       "env": {
-        "EXPO_PUBLIC_BACKEND": "cloudkit"
+        "EXPO_PUBLIC_BACKEND": "cloudkit",
+        "CLOUDKIT_ENV": "Development"
       }
     },
     "production": {
       "extends": "_base",
       "ios": {
         "resourceClass": "medium"
+      },
+      "env": {
+        "CLOUDKIT_ENV": "Production"
       }
     },
     "testflight": {
@@ -59,6 +63,9 @@
       "android": {
         "buildType": "app-bundle",
         "gradleCommand": ":app:bundleRelease"
+      },
+      "env": {
+        "CLOUDKIT_ENV": "Production"
       }
     }
   },
