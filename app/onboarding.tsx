@@ -31,8 +31,10 @@ export default function OnboardingScreen() {
   const [budget, setBudget] = useState("");
   const [busy, setBusy] = useState(false);
 
-  // New users who already have a name + email from Apple skip the capture step.
-  const needsProfile = !(user?.name?.trim() && user?.email?.trim());
+  // Frozen at mount: new users who already have a name + email from Apple skip
+  // the capture step. Must NOT recompute mid-flow — entering the name/email
+  // would otherwise shrink the steps array and push the index out of bounds.
+  const [needsProfile] = useState(() => !(user?.name?.trim() && user?.email?.trim()));
 
   // Import is asked right after the slides — migrating users never see profile
   // capture (the migration brings their name/email/data across).
@@ -42,7 +44,7 @@ export default function OnboardingScreen() {
   );
 
   const [idx, setIdx] = useState(0);
-  const key = steps[idx];
+  const key = steps[idx] ?? steps[steps.length - 1];
   const accent = key.startsWith("slide") ? SLIDES[Number(key.slice(5))].blob : "#FE8C00";
 
   const next = () => setIdx((i) => Math.min(i + 1, steps.length - 1));
