@@ -29,21 +29,33 @@ type DemoTx = {
   hour: number;
 };
 
+// Real Appwrite category document ids (see constants/categories.ts).
+const CAT = {
+  salary: "6945787f000a35903da2",
+  groceries: "694576140002de855c7a",
+  restaurants: "69457633002669063076",
+  transport: "69457644003864cd88ea",
+  utilities: "694576530033767de11e",
+  entertainment: "69457662001bc83a81fa",
+  shopping: "6949b8fb00070d28ff18",
+  transfer: "6949cfe6003d17da084c",
+};
+
 const DEMO_TRANSACTIONS: DemoTx[] = [
-  { title: "Salary", subtitle: "Monthly pay", amount: 285000, kind: "income", categoryId: "income", daysAgo: 2, hour: 9 },
-  { title: "Mister Magpie Coffee", subtitle: "Dublin cafe", amount: 450, kind: "expense", categoryId: "food", daysAgo: 0, hour: 8 },
-  { title: "Tesco", subtitle: "Weekly shop", amount: 8500, kind: "expense", categoryId: "food", daysAgo: 0, hour: 18 },
-  { title: "Nando's", subtitle: "Lunch", amount: 2150, kind: "expense", categoryId: "food", daysAgo: 1, hour: 12 },
-  { title: "Uber", subtitle: "Airport ride", amount: 3200, kind: "expense", categoryId: "transport", daysAgo: 2, hour: 5 },
-  { title: "Irish Rail", subtitle: "Commute", amount: 1240, kind: "expense", categoryId: "transport", daysAgo: 3, hour: 8 },
-  { title: "Electric Ireland", subtitle: "Utility bill", amount: 9800, kind: "expense", categoryId: "bills", daysAgo: 4, hour: 10 },
-  { title: "Vodafone", subtitle: "Phone plan", amount: 3500, kind: "expense", categoryId: "bills", daysAgo: 6, hour: 11 },
-  { title: "Zara", subtitle: "Top & jeans", amount: 7900, kind: "expense", categoryId: "shopping", daysAgo: 3, hour: 15 },
-  { title: "Amazon", subtitle: "Household", amount: 4299, kind: "expense", categoryId: "shopping", daysAgo: 7, hour: 20 },
-  { title: "Monthly Saver", subtitle: "Transfer to savings", amount: 30000, kind: "expense", categoryId: "savings", daysAgo: 2, hour: 9 },
-  { title: "Spotify", subtitle: "Subscription", amount: 1099, kind: "expense", categoryId: "bills", daysAgo: 9, hour: 6 },
-  { title: "SuperValu", subtitle: "Groceries", amount: 6230, kind: "expense", categoryId: "food", daysAgo: 12, hour: 17 },
-  { title: "Freelance invoice", subtitle: "Side project", amount: 45000, kind: "income", categoryId: "income", daysAgo: 15, hour: 14 },
+  { title: "Salary", subtitle: "Monthly pay", amount: 285000, kind: "income", categoryId: CAT.salary, daysAgo: 2, hour: 9 },
+  { title: "Mister Magpie Coffee", subtitle: "Dublin cafe", amount: 450, kind: "expense", categoryId: CAT.restaurants, daysAgo: 0, hour: 8 },
+  { title: "Tesco", subtitle: "Weekly shop", amount: 8500, kind: "expense", categoryId: CAT.groceries, daysAgo: 0, hour: 18 },
+  { title: "Nando's", subtitle: "Lunch", amount: 2150, kind: "expense", categoryId: CAT.restaurants, daysAgo: 1, hour: 12 },
+  { title: "Uber", subtitle: "Airport ride", amount: 3200, kind: "expense", categoryId: CAT.transport, daysAgo: 2, hour: 5 },
+  { title: "Irish Rail", subtitle: "Commute", amount: 1240, kind: "expense", categoryId: CAT.transport, daysAgo: 3, hour: 8 },
+  { title: "Electric Ireland", subtitle: "Utility bill", amount: 9800, kind: "expense", categoryId: CAT.utilities, daysAgo: 4, hour: 10 },
+  { title: "Vodafone", subtitle: "Phone plan", amount: 3500, kind: "expense", categoryId: CAT.utilities, daysAgo: 6, hour: 11 },
+  { title: "Zara", subtitle: "Top & jeans", amount: 7900, kind: "expense", categoryId: CAT.shopping, daysAgo: 3, hour: 15 },
+  { title: "Amazon", subtitle: "Household", amount: 4299, kind: "expense", categoryId: CAT.shopping, daysAgo: 7, hour: 20 },
+  { title: "Monthly Saver", subtitle: "Transfer to savings", amount: 30000, kind: "expense", categoryId: CAT.transfer, daysAgo: 2, hour: 9 },
+  { title: "Spotify", subtitle: "Subscription", amount: 1099, kind: "expense", categoryId: CAT.entertainment, daysAgo: 9, hour: 6 },
+  { title: "SuperValu", subtitle: "Groceries", amount: 6230, kind: "expense", categoryId: CAT.groceries, daysAgo: 12, hour: 17 },
+  { title: "Freelance invoice", subtitle: "Side project", amount: 45000, kind: "income", categoryId: CAT.salary, daysAgo: 15, hour: 14 },
 ];
 
 function isoDaysAgo(daysAgo: number, hour: number): string {

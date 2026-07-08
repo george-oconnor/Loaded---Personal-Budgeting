@@ -1,0 +1,156 @@
+DEFINE SCHEMA
+
+    RECORD TYPE Transaction (
+        account STRING,
+        amount DOUBLE,
+        categoryId STRING QUERYABLE,
+        currency STRING,
+        date TIMESTAMP QUERYABLE SORTABLE,
+        displayName STRING,
+        excludeFromAnalytics INT64,
+        hideMerchantIcon INT64,
+        importBatchId STRING QUERYABLE,
+        importedAt TIMESTAMP SORTABLE,
+        isAnalyticsProtected INT64,
+        isSubscription INT64,
+        kind STRING QUERYABLE,
+        matchedTransferId STRING,
+        originalAmount DOUBLE,
+        source STRING,
+        subscriptionId STRING QUERYABLE,
+        subtitle STRING,
+        title STRING,
+        "___recordID" REFERENCE QUERYABLE,
+        GRANT WRITE TO "_creator",
+        GRANT CREATE TO "_icloud",
+        GRANT READ TO "_creator"
+    );
+
+    RECORD TYPE Budget (
+        budgetSource STRING,
+        currency STRING,
+        cycleDay INT64,
+        cycleType STRING,
+        lastMonthReference STRING,
+        monthlyBudget DOUBLE,
+        "___recordID" REFERENCE QUERYABLE,
+        GRANT WRITE TO "_creator",
+        GRANT CREATE TO "_icloud",
+        GRANT READ TO "_creator"
+    );
+
+    RECORD TYPE UserProfile (
+        email STRING,
+        firstname STRING,
+        lastLoginTime TIMESTAMP,
+        lastname STRING,
+        updatedAt TIMESTAMP,
+        "___recordID" REFERENCE QUERYABLE,
+        GRANT WRITE TO "_creator",
+        GRANT CREATE TO "_icloud",
+        GRANT READ TO "_creator"
+    );
+
+    RECORD TYPE Balance (
+        accountKey STRING,
+        accountName STRING,
+        accountType STRING,
+        balance DOUBLE,
+        currency STRING,
+        importBatchId STRING QUERYABLE,
+        lastUpdated TIMESTAMP,
+        previousBalance DOUBLE,
+        previousBalanceTimestamp TIMESTAMP,
+        provider STRING,
+        "___recordID" REFERENCE QUERYABLE,
+        GRANT WRITE TO "_creator",
+        GRANT CREATE TO "_icloud",
+        GRANT READ TO "_creator"
+    );
+
+    RECORD TYPE BalanceHistory (
+        accountKey STRING QUERYABLE,
+        accountName STRING,
+        balance INT64,
+        currency STRING,
+        date TIMESTAMP QUERYABLE SORTABLE,
+        importBatchId STRING QUERYABLE,
+        provider STRING,
+        source STRING,
+        "___recordID" REFERENCE QUERYABLE,
+        GRANT WRITE TO "_creator",
+        GRANT CREATE TO "_icloud",
+        GRANT READ TO "_creator"
+    );
+
+    RECORD TYPE AccountImport (
+        accountKey STRING,
+        accountName STRING,
+        lastImportDate TIMESTAMP,
+        provider STRING,
+        "___recordID" REFERENCE QUERYABLE,
+        GRANT WRITE TO "_creator",
+        GRANT CREATE TO "_icloud",
+        GRANT READ TO "_creator"
+    );
+
+    RECORD TYPE UserPreferences (
+        dismissedImportBanners STRING,
+        notificationsEnabled INT64,
+        "___recordID" REFERENCE QUERYABLE,
+        GRANT WRITE TO "_creator",
+        GRANT CREATE TO "_icloud",
+        GRANT READ TO "_creator"
+    );
+
+    RECORD TYPE Subscription (
+        amount DOUBLE,
+        amountType STRING,
+        categoryId STRING,
+        confirmedAt TIMESTAMP SORTABLE,
+        displayName STRING,
+        frequency STRING,
+        merchantName STRING,
+        name STRING,
+        nextBillingDate TIMESTAMP,
+        notes STRING,
+        status STRING,
+        "___recordID" REFERENCE QUERYABLE,
+        GRANT WRITE TO "_creator",
+        GRANT CREATE TO "_icloud",
+        GRANT READ TO "_creator"
+    );
+
+    RECORD TYPE MigrationState (
+        appwriteUserId STRING,
+        counts STRING,
+        migratedAt TIMESTAMP,
+        "___recordID" REFERENCE QUERYABLE,
+        GRANT WRITE TO "_creator",
+        GRANT CREATE TO "_icloud",
+        GRANT READ TO "_creator"
+    );
+
+    RECORD TYPE MerchantVote (
+        categoryId STRING,
+        merchantKey STRING,
+        merchantName STRING,
+        updatedAt TIMESTAMP,
+        voterHash STRING,
+        "___recordID" REFERENCE QUERYABLE,
+        GRANT WRITE TO "_creator",
+        GRANT CREATE TO "_icloud",
+        GRANT READ TO "_world"
+    );
+
+    RECORD TYPE IconVote (
+        iconUrl STRING,
+        merchantKey STRING,
+        merchantName STRING,
+        updatedAt TIMESTAMP,
+        voterHash STRING,
+        "___recordID" REFERENCE QUERYABLE,
+        GRANT WRITE TO "_creator",
+        GRANT CREATE TO "_icloud",
+        GRANT READ TO "_world"
+    );
