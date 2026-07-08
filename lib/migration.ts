@@ -80,6 +80,15 @@ async function markMigrationDoneLocally(): Promise<void> {
   await AsyncStorage.setItem(MIGRATION_FLAG, 'done');
 }
 
+/** Clear the local "migration done" flag (e.g. after account deletion). */
+export async function resetMigrationFlag(): Promise<void> {
+  try {
+    await AsyncStorage.removeItem(MIGRATION_FLAG);
+  } catch {
+    // best effort
+  }
+}
+
 /**
  * Whether this CloudKit account already has data (a completed migration record
  * or any transactions) — used to decide whether to offer the migration prompt

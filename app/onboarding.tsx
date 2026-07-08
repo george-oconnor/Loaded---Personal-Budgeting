@@ -13,7 +13,7 @@ import {
   View,
 } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
-import Animated, { FadeIn, FadeInDown, FadeOut, ZoomIn } from "react-native-reanimated";
+import Animated, { FadeIn, SlideInRight, SlideOutLeft } from "react-native-reanimated";
 
 const SLIDES = [
   {
@@ -104,8 +104,8 @@ export default function OnboardingScreen() {
         <View className="flex-1 px-6 justify-center">
           {/* ---- Intro slides ---- */}
           {isSlide && slide && (
-            <Animated.View key={`slide-${step}`} entering={FadeInDown.duration(450)} exiting={FadeOut.duration(150)}>
-              <Animated.Text key={`emoji-${step}`} entering={ZoomIn.springify().damping(12).delay(80)} style={{ fontSize: 84, marginBottom: 28 }}>
+            <Animated.View key={`slide-${step}`} entering={SlideInRight.duration(420)} exiting={SlideOutLeft.duration(260)}>
+              <Animated.Text key={`emoji-${step}`} entering={FadeIn.duration(500).delay(120)} style={{ fontSize: 84, marginBottom: 28 }}>
                 {slide.emoji}
               </Animated.Text>
               <Text className="text-4xl font-bold text-dark-100 mb-4" style={{ lineHeight: 42 }}>{slide.title}</Text>
@@ -115,8 +115,8 @@ export default function OnboardingScreen() {
 
           {/* ---- Name capture ---- */}
           {step === NAME_STEP && (
-            <Animated.View key="name" entering={FadeInDown.duration(450)}>
-              <Animated.Text entering={ZoomIn.springify().damping(12).delay(80)} style={{ fontSize: 76, marginBottom: 24 }}>👋</Animated.Text>
+            <Animated.View key="name" entering={SlideInRight.duration(420)} exiting={SlideOutLeft.duration(260)}>
+              <Animated.Text entering={FadeIn.duration(500).delay(120)} style={{ fontSize: 76, marginBottom: 24 }}>👋</Animated.Text>
               <Text className="text-4xl font-bold text-dark-100 mb-3">What should we{"\n"}call you?</Text>
               <Text className="text-lg text-gray-500 mb-8">Just a first name is perfect.</Text>
               <TextInput
@@ -136,8 +136,8 @@ export default function OnboardingScreen() {
 
           {/* ---- Import existing data ---- */}
           {step === IMPORT_STEP && (
-            <Animated.View key="import" entering={FadeInDown.duration(450)}>
-              <Animated.Text entering={ZoomIn.springify().damping(12).delay(80)} style={{ fontSize: 76, marginBottom: 24 }}>📦</Animated.Text>
+            <Animated.View key="import" entering={SlideInRight.duration(420)} exiting={SlideOutLeft.duration(260)}>
+              <Animated.Text entering={FadeIn.duration(500).delay(120)} style={{ fontSize: 76, marginBottom: 24 }}>📦</Animated.Text>
               <Text className="text-4xl font-bold text-dark-100 mb-3">Used Loaded{"\n"}before?</Text>
               <Text className="text-lg text-gray-500 mb-10">If you had an older account, bring all your transactions, budgets and balances across to iCloud.</Text>
               <Pressable onPress={goImport} disabled={busy} className="py-4 rounded-2xl items-center bg-primary mb-3 active:opacity-80">
@@ -151,8 +151,8 @@ export default function OnboardingScreen() {
 
           {/* ---- Budget setup ---- */}
           {step === BUDGET_STEP && (
-            <Animated.View key="budget" entering={FadeInDown.duration(450)}>
-              <Animated.Text entering={ZoomIn.springify().damping(12).delay(80)} style={{ fontSize: 76, marginBottom: 24 }}>🎯</Animated.Text>
+            <Animated.View key="budget" entering={SlideInRight.duration(420)} exiting={SlideOutLeft.duration(260)}>
+              <Animated.Text entering={FadeIn.duration(500).delay(120)} style={{ fontSize: 76, marginBottom: 24 }}>🎯</Animated.Text>
               <Text className="text-4xl font-bold text-dark-100 mb-3">Set your{"\n"}monthly budget</Text>
               <Text className="text-lg text-gray-500 mb-8">How much do you want to spend each month? You can change this anytime.</Text>
               <View className="flex-row items-center px-5 rounded-2xl bg-gray-100">

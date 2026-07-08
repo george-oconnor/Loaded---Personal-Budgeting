@@ -111,7 +111,7 @@ export async function checkICloud(): Promise<ICloudStatus> {
  */
 export async function activateCloudKitSession(
   identity: AppleIdentity
-): Promise<{ userRecordName: string; name?: string }> {
+): Promise<{ userRecordName: string; name?: string; email?: string }> {
   await ensureUserZone();
   const userRecordName = await getCloudKitUserRecordName();
 
@@ -132,6 +132,11 @@ export async function activateCloudKitSession(
   const profileName = existing
     ? `${(existing as any).firstName ?? ''} ${(existing as any).lastName ?? ''}`.trim()
     : '';
+  const profileEmail = existing ? (existing as any).email : undefined;
 
-  return { userRecordName, name: identity.fullName || profileName || undefined };
+  return {
+    userRecordName,
+    name: identity.fullName || profileName || undefined,
+    email: identity.email || profileEmail || undefined,
+  };
 }

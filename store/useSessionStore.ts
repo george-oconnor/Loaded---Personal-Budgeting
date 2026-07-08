@@ -10,14 +10,15 @@ import {
   type AppleIdentity,
 } from "@/lib/auth";
 import { queueDeleteAll } from "@/lib/deleteQueue";
-import { hasOnboarded, setOnboarded } from "@/lib/onboarding";
+import { resetMigrationFlag } from "@/lib/migration";
+import { hasOnboarded, resetOnboarding, setOnboarded } from "@/lib/onboarding";
 import { addBreadcrumb, captureException, clearUser as clearSentryUser, setUser as setSentryUser } from "@/lib/sentry";
 import type { SessionState } from "@/types/type";
 import { create } from "zustand";
 
-const identityToUser = (identity: AppleIdentity, name?: string) => ({
+const identityToUser = (identity: AppleIdentity, name?: string, email?: string) => ({
   id: identity.appleUserId,
-  email: identity.email,
+  email: email ?? identity.email,
   name: name ?? identity.fullName,
 });
 
@@ -62,10 +63,10 @@ export const useSessionStore = create<SessionState>((set) => ({
           set({ user: identityToUser(identity), token: null, status: "icloud-unavailable", error: null });
           return;
         }
-        const { userRecordName, name } = await activateCloudKitSession(identity);
+        const { userRecordName, name, email } = await activateCloudKitSession(identity);
         const needsOnboarding = await resolveNeedsOnboarding(name);
-        setSentryUser({ id: identity.appleUserId, email: identity.email, username: name });
-        set({ user: identityToUser(identity, name), token: userRecordName, status: "authenticated", error: null, needsOnboarding });
+        setSentryUser({ id: identity.appleUserId, email: email ?? identity.email, username: name });
+        set({ user: identityToUser(identity, name, email), token: userRecordName, status: "authenticated", error: null, needsOnboarding });
         updateUserProfile(identity.appleUserId, { lastLoginTime: new Date().toISOString() }).catch(() => {});
       } catch (err) {
         const errorMsg = err instanceof Error ? err.message : "Failed to restore session";
@@ -110,11 +111,11 @@ export const useSessionStore = create<SessionState>((set) => ({
         return;
       }
 
-      const { userRecordName, name } = await activateCloudKitSession(identity);
+      const { userRecordName, name, email } = await activateCloudKitSession(identity);
       const needsOnboarding = await resolveNeedsOnboarding(name);
-      setSentryUser({ id: identity.appleUserId, email: identity.email, username: name });
+      setSentryUser({ id: identity.appleUserId, email: email ?? identity.email, username: name });
       addBreadcrumb({ message: "Sign in with Apple successful", category: "auth", level: "info", data: { userId: identity.appleUserId } });
-      set({ user: identityToUser(identity, name), token: userRecordName, status: "authenticated", error: null, needsOnboarding });
+      set({ user: identityToUser(identity, name, email), token: userRecordName, status: "authenticated", error: null, needsOnboarding });
       updateUserProfile(identity.appleUserId, { lastLoginTime: new Date().toISOString() }).catch(() => {});
     } catch (err) {
       if (isAppleCancel(err)) {
@@ -256,10 +257,14 @@ export const useSessionStore = create<SessionState>((set) => ({
 
       if (result.success) {
         if (USE_CLOUDKIT) {
+          // Fully reset "new user" state so re-signing-in re-runs onboarding
+          // and re-offers migration.
           await clearStoredIdentity();
+          await resetOnboarding();
+          await resetMigrationFlag();
         }
         clearSentryUser();
-        set({ user: null, token: null, status: "unauthenticated", error: null });
+        set({ user: null, token: null, status: "unauthenticated", error: null, needsOnboarding: false });
       }
 
       return result;
