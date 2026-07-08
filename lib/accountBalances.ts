@@ -336,13 +336,13 @@ export async function syncBalancesFromAppwrite(userId: string): Promise<void> {
   }
 
   try {
-    const { getAccountBalancesFromAppwrite } = await import('./appwrite');
+    const { getAccountBalancesFromAppwrite } = await import('./backend');
     const remoteBalances = await getAccountBalancesFromAppwrite(userId);
-    
+
     // Save all remote balances to local storage
     const key = `${ACCOUNT_BALANCES_KEY}_${userId}`;
     await AsyncStorage.setItem(key, JSON.stringify(remoteBalances));
-    console.log(`Synced ${remoteBalances.length} balances from Appwrite`);
+    console.log(`Synced ${remoteBalances.length} balances from backend`);
   } catch (error) {
     console.error('Error syncing balances from Appwrite:', error);
   }
@@ -355,9 +355,11 @@ export async function saveBalanceSnapshot(userId: string, importBatchId: string)
   try {
     const balances = await getAccountBalances(userId);
     
-    // Save to Appwrite for persistence across devices
-    const { saveBalanceSnapshotToAppwrite } = await import('./appwrite');
-    await saveBalanceSnapshotToAppwrite(userId, importBatchId, balances);
+    // Persist snapshot to the backend for cross-device restore. Cast: locally
+    // cached balances always carry accountKey/accountType at runtime, though the
+    // AccountBalance type marks them optional.
+    const { saveBalanceSnapshotToAppwrite } = await import('./backend');
+    await saveBalanceSnapshotToAppwrite(userId, importBatchId, balances as any);
     
     console.log('Balance snapshot saved');
   } catch (error) {
@@ -370,14 +372,13 @@ export async function saveBalanceSnapshot(userId: string, importBatchId: string)
  */
 export async function restoreLastBalanceSnapshot(userId: string, importBatchId: string): Promise<boolean> {
   try {
-    const { restoreBalancesFromSnapshot } = await import('./appwrite');
-    
-    // Restore balances from Appwrite previousBalance fields for this batch
+    const { restoreBalancesFromSnapshot } = await import('./backend');
+
+    // Restore balances from the backend previousBalance fields for this batch
     const restored = await restoreBalancesFromSnapshot(userId, importBatchId);
 
     if (restored) {
-      // Also sync from Appwrite to update local storage
-      const { syncBalancesFromAppwrite } = await import('./appwrite');
+      // Also sync from the backend to update local storage
       await syncBalancesFromAppwrite(userId);
       console.log('Balance snapshot restored');
       return true;
