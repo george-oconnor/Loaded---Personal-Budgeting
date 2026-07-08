@@ -65,10 +65,13 @@ export type SessionState = {
   token: string | null;
   status: SessionStatus;
   error: string | null;
+  needsOnboarding: boolean;
   checkSession: () => Promise<void>;
   login: (email: string, password: string) => Promise<void>;
   loginWithApple: () => Promise<void>;
   recheckICloud: () => Promise<void>;
+  setUserName: (name: string) => Promise<void>;
+  completeOnboarding: () => Promise<void>;
   signup: (email: string, password: string, firstName: string, lastName: string) => Promise<void>;
   logout: () => Promise<void>;
   deleteAccount: () => Promise<{ success: boolean; error?: string }>;

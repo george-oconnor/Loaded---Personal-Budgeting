@@ -63,7 +63,7 @@ export default function RootLayout() {
     "QuickSand-Light": require("../assets/fonts/Quicksand-Light.ttf"),
   });
 
-  const { checkSession, status } = useSessionStore();
+  const { checkSession, status, needsOnboarding } = useSessionStore();
   const router = useRouter();
   const segments = useSegments();
   const navigationAttempted = useRef(false);
@@ -382,17 +382,24 @@ export default function RootLayout() {
       return;
     }
 
-    // /migrate is a pre-auth route (existing users importing Appwrite data
-    // before signing in with Apple), so treat it like the auth group here.
-    const inAuthGroup = segments[0] === "auth" || segments[0] === "migrate";
+    // /migrate and /onboarding are reachable outside the tabs (pre-auth import
+    // and first-run flow), so treat them like the auth group for gating.
+    const seg0 = segments[0];
+    const inPreAuth = seg0 === "auth" || seg0 === "migrate" || seg0 === "onboarding";
 
-    if (status === "unauthenticated" && !inAuthGroup) {
+    if (status === "unauthenticated" && !inPreAuth) {
       if (!navigationAttempted.current) {
         navigationAttempted.current = true;
         addBreadcrumb({ message: 'Redirecting to auth (unauthenticated)', category: 'navigation' });
         router.replace("/auth");
       }
-    } else if (status === "authenticated" && inAuthGroup) {
+    } else if (status === "authenticated" && needsOnboarding && seg0 !== "onboarding" && seg0 !== "migrate") {
+      if (!navigationAttempted.current) {
+        navigationAttempted.current = true;
+        addBreadcrumb({ message: 'Redirecting to onboarding (new user)', category: 'navigation' });
+        router.replace("/onboarding");
+      }
+    } else if (status === "authenticated" && !needsOnboarding && (seg0 === "auth" || seg0 === "onboarding")) {
       if (!navigationAttempted.current) {
         navigationAttempted.current = true;
         addBreadcrumb({ message: 'Redirecting to home (authenticated)', category: 'navigation' });
@@ -402,7 +409,7 @@ export default function RootLayout() {
       // Reset flag when in correct route
       navigationAttempted.current = false;
     }
-  }, [status, segments]);
+  }, [status, segments, needsOnboarding]);
 
   // Track route changes for navigation breadcrumbs
   useEffect(() => {

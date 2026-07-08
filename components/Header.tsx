@@ -8,12 +8,12 @@ import { router } from "expo-router";
 import { useEffect, useRef, useState } from "react";
 import { Animated, Easing, Pressable, Text, View } from "react-native";
 
-export default function Header({ 
-  name = "NO USER",
+export default function Header({
+  name,
   title,
   subtitle = "Welcome back",
   noPaddingBottom = false
-}: { 
+}: {
   name?: string;
   title?: string;
   subtitle?: string;
@@ -28,13 +28,15 @@ export default function Header({
   const [deleteStatus, setDeleteStatus] = useState<any>(null);
   const rotateAnim = useRef(new Animated.Value(0)).current;
   
-  const initials = user?.name
-    ?.split(" ")
-    .map((n) => n[0])
-    .join("")
-    .toUpperCase() || "?";
-  
-  const displayTitle = title ?? name;
+  // Graceful fallback chain: display name -> email prefix -> friendly default,
+  // so the header never shows a blank/"NO USER" when Apple withholds the name.
+  const resolvedName = (name && name.trim()) || user?.email?.split("@")[0] || "Welcome";
+
+  const initials = (name && name.trim())
+    ? name.trim().split(" ").map((n) => n[0]).join("").toUpperCase()
+    : (user?.email?.[0]?.toUpperCase() || "?");
+
+  const displayTitle = title ?? resolvedName;
 
   useEffect(() => {
     const checkSync = async () => {
