@@ -96,25 +96,33 @@ export default function MigrateScreen() {
                 Sign in to your old account (email and password) so we can read your data one last time.
               </Text>
               <View className="gap-4 mb-6">
-                <TextInput
-                  value={email}
-                  onChangeText={setEmail}
-                  placeholder="your@email.com"
-                  keyboardType="email-address"
-                  autoCapitalize="none"
-                  autoComplete="email"
-                  className="px-4 py-3 rounded-2xl bg-white border border-gray-200 text-dark-100"
-                  style={{ paddingVertical: 12 }}
-                />
-                <TextInput
-                  value={password}
-                  onChangeText={setPassword}
-                  placeholder="••••••••"
-                  secureTextEntry
-                  autoCapitalize="none"
-                  className="px-4 py-3 rounded-2xl bg-white border border-gray-200 text-dark-100"
-                  style={{ paddingVertical: 12 }}
-                />
+                <View>
+                  <Text className="text-sm font-semibold text-dark-100 mb-2">Email</Text>
+                  <TextInput
+                    value={email}
+                    onChangeText={setEmail}
+                    placeholder="your@email.com"
+                    placeholderTextColor="#9CA3AF"
+                    keyboardType="email-address"
+                    autoCapitalize="none"
+                    autoComplete="email"
+                    className="px-4 py-3 rounded-2xl bg-white border border-gray-200 text-dark-100"
+                    style={{ paddingVertical: 12 }}
+                  />
+                </View>
+                <View>
+                  <Text className="text-sm font-semibold text-dark-100 mb-2">Password</Text>
+                  <TextInput
+                    value={password}
+                    onChangeText={setPassword}
+                    placeholder="Your old account password"
+                    placeholderTextColor="#9CA3AF"
+                    secureTextEntry
+                    autoCapitalize="none"
+                    className="px-4 py-3 rounded-2xl bg-white border border-gray-200 text-dark-100"
+                    style={{ paddingVertical: 12 }}
+                  />
+                </View>
               </View>
               <Pressable
                 onPress={handleCredentialSubmit}

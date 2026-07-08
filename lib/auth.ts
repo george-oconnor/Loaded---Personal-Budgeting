@@ -109,11 +109,13 @@ export async function checkICloud(): Promise<ICloudStatus> {
  * a UserProfile record exists. Call after a successful sign-in with iCloud
  * available. Returns the CloudKit user record name (used as the session token).
  */
-export async function activateCloudKitSession(identity: AppleIdentity): Promise<string> {
+export async function activateCloudKitSession(
+  identity: AppleIdentity
+): Promise<{ userRecordName: string; name?: string }> {
   await ensureUserZone();
   const userRecordName = await getCloudKitUserRecordName();
 
-  const existing = await getUserProfile(identity.appleUserId).catch(() => null);
+  let existing = await getUserProfile(identity.appleUserId).catch(() => null);
   if (!existing) {
     const [firstName, ...rest] = (identity.fullName ?? '').split(' ');
     await createUserProfile(
@@ -122,7 +124,14 @@ export async function activateCloudKitSession(identity: AppleIdentity): Promise<
       firstName ?? '',
       rest.join(' ')
     ).catch((err) => console.warn('Failed to create user profile:', err));
+    existing = await getUserProfile(identity.appleUserId).catch(() => null);
   }
 
-  return userRecordName;
+  // Apple only returns the name on first authorization; fall back to the
+  // CloudKit profile (e.g. migrated from Appwrite) so the UI still has a name.
+  const profileName = existing
+    ? `${(existing as any).firstName ?? ''} ${(existing as any).lastName ?? ''}`.trim()
+    : '';
+
+  return { userRecordName, name: identity.fullName || profileName || undefined };
 }

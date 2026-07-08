@@ -14,10 +14,10 @@ import { addBreadcrumb, captureException, clearUser as clearSentryUser, setUser 
 import type { SessionState } from "@/types/type";
 import { create } from "zustand";
 
-const identityToUser = (identity: AppleIdentity) => ({
+const identityToUser = (identity: AppleIdentity, name?: string) => ({
   id: identity.appleUserId,
   email: identity.email,
-  name: identity.fullName,
+  name: name ?? identity.fullName,
 });
 
 export const useSessionStore = create<SessionState>((set) => ({
@@ -48,9 +48,9 @@ export const useSessionStore = create<SessionState>((set) => ({
           set({ user: identityToUser(identity), token: null, status: "icloud-unavailable", error: null });
           return;
         }
-        const token = await activateCloudKitSession(identity);
-        setSentryUser({ id: identity.appleUserId, email: identity.email, username: identity.fullName });
-        set({ user: identityToUser(identity), token, status: "authenticated", error: null });
+        const { userRecordName, name } = await activateCloudKitSession(identity);
+        setSentryUser({ id: identity.appleUserId, email: identity.email, username: name });
+        set({ user: identityToUser(identity, name), token: userRecordName, status: "authenticated", error: null });
         updateUserProfile(identity.appleUserId, { lastLoginTime: new Date().toISOString() }).catch(() => {});
       } catch (err) {
         const errorMsg = err instanceof Error ? err.message : "Failed to restore session";
@@ -95,10 +95,10 @@ export const useSessionStore = create<SessionState>((set) => ({
         return;
       }
 
-      const token = await activateCloudKitSession(identity);
-      setSentryUser({ id: identity.appleUserId, email: identity.email, username: identity.fullName });
+      const { userRecordName, name } = await activateCloudKitSession(identity);
+      setSentryUser({ id: identity.appleUserId, email: identity.email, username: name });
       addBreadcrumb({ message: "Sign in with Apple successful", category: "auth", level: "info", data: { userId: identity.appleUserId } });
-      set({ user: identityToUser(identity), token, status: "authenticated", error: null });
+      set({ user: identityToUser(identity, name), token: userRecordName, status: "authenticated", error: null });
       updateUserProfile(identity.appleUserId, { lastLoginTime: new Date().toISOString() }).catch(() => {});
     } catch (err) {
       if (isAppleCancel(err)) {
@@ -126,9 +126,9 @@ export const useSessionStore = create<SessionState>((set) => ({
       return;
     }
     try {
-      const token = await activateCloudKitSession(identity);
-      setSentryUser({ id: identity.appleUserId, email: identity.email, username: identity.fullName });
-      set({ user: identityToUser(identity), token, status: "authenticated", error: null });
+      const { userRecordName, name } = await activateCloudKitSession(identity);
+      setSentryUser({ id: identity.appleUserId, email: identity.email, username: name });
+      set({ user: identityToUser(identity, name), token: userRecordName, status: "authenticated", error: null });
     } catch {
       set({ user: identityToUser(identity), token: null, status: "icloud-unavailable", error: null });
     }

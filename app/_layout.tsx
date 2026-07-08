@@ -382,7 +382,9 @@ export default function RootLayout() {
       return;
     }
 
-    const inAuthGroup = segments[0] === "auth";
+    // /migrate is a pre-auth route (existing users importing Appwrite data
+    // before signing in with Apple), so treat it like the auth group here.
+    const inAuthGroup = segments[0] === "auth" || segments[0] === "migrate";
 
     if (status === "unauthenticated" && !inAuthGroup) {
       if (!navigationAttempted.current) {
