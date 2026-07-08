@@ -2,12 +2,13 @@ import { updateMonthlyBudget } from "@/lib/backend";
 import { useSessionStore } from "@/store/useSessionStore";
 import { Feather } from "@expo/vector-icons";
 import { router } from "expo-router";
-import { useState } from "react";
+import { useMemo, useState } from "react";
 import {
   ActivityIndicator,
   KeyboardAvoidingView,
   Platform,
   Pressable,
+  ScrollView,
   Text,
   TextInput,
   View,
@@ -16,42 +17,54 @@ import { SafeAreaView } from "react-native-safe-area-context";
 import Animated, { FadeIn, SlideInRight, SlideOutLeft } from "react-native-reanimated";
 
 const SLIDES = [
-  {
-    emoji: "💰",
-    blob: "#FE8C00",
-    title: "Take control\nof your money",
-    subtitle: "Track every euro, effortlessly — see exactly where it goes and stay on budget.",
-  },
-  {
-    emoji: "🏦",
-    blob: "#0C8CE9",
-    title: "Import in\nseconds",
-    subtitle: "Pull transactions straight from Revolut, AIB, or any CSV. We auto-categorise them for you.",
-  },
-  {
-    emoji: "🔒",
-    blob: "#2F9B65",
-    title: "Yours, and\nonly yours",
-    subtitle: "Everything lives privately in your own iCloud. No sign-ups, no tracking, no ads. Ever.",
-  },
+  { emoji: "💰", blob: "#FE8C00", title: "Take control\nof your money", subtitle: "Track every euro, effortlessly — see exactly where it goes and stay on budget." },
+  { emoji: "🏦", blob: "#0C8CE9", title: "Import in\nseconds", subtitle: "Pull transactions straight from Revolut, AIB, or any CSV. We auto-categorise them for you." },
+  { emoji: "🔒", blob: "#2F9B65", title: "Yours, and\nonly yours", subtitle: "Everything lives privately in your own iCloud. No sign-ups, no tracking, no ads. Ever." },
 ];
-
-const NAME_STEP = SLIDES.length; // 3
-const IMPORT_STEP = NAME_STEP + 1; // 4
-const BUDGET_STEP = IMPORT_STEP + 1; // 5
-const TOTAL = BUDGET_STEP + 1; // 6
 
 export default function OnboardingScreen() {
   const { user, setUserName, completeOnboarding } = useSessionStore();
-  const [step, setStep] = useState(0);
+
+  // Prefill from Apple when it provided details on first authorization.
   const [name, setName] = useState(user?.name ?? "");
+  const [email, setEmail] = useState(user?.email ?? "");
   const [budget, setBudget] = useState("");
   const [busy, setBusy] = useState(false);
+
+  // New users who already have a name + email from Apple skip the capture step.
+  const needsProfile = !(user?.name?.trim() && user?.email?.trim());
+
+  // Import is asked right after the slides — migrating users never see profile
+  // capture (the migration brings their name/email/data across).
+  const steps = useMemo(
+    () => ["slide0", "slide1", "slide2", "import", ...(needsProfile ? ["profile"] : []), "budget"],
+    [needsProfile]
+  );
+
+  const [idx, setIdx] = useState(0);
+  const key = steps[idx];
+  const accent = key.startsWith("slide") ? SLIDES[Number(key.slice(5))].blob : "#FE8C00";
+
+  const next = () => setIdx((i) => Math.min(i + 1, steps.length - 1));
 
   const finish = async () => {
     setBusy(true);
     await completeOnboarding();
     router.replace("/");
+  };
+
+  const goImport = async () => {
+    setBusy(true);
+    await completeOnboarding();
+    router.replace("/migrate");
+  };
+
+  const saveProfileAndNext = async () => {
+    if (!name.trim()) return;
+    setBusy(true);
+    await setUserName(name, email);
+    setBusy(false);
+    next();
   };
 
   const saveBudgetAndFinish = async () => {
@@ -64,48 +77,43 @@ export default function OnboardingScreen() {
     router.replace("/");
   };
 
-  const goImport = async () => {
-    setBusy(true);
-    if (name.trim()) await setUserName(name);
-    await completeOnboarding();
-    router.replace("/migrate");
-  };
+  const isSlide = key.startsWith("slide");
+  const slide = isSlide ? SLIDES[Number(key.slice(5))] : null;
 
-  const next = async () => {
-    if (step === NAME_STEP && name.trim()) {
-      await setUserName(name);
-    }
-    setStep((s) => Math.min(s + 1, TOTAL - 1));
-  };
-
-  const isSlide = step < NAME_STEP;
-  const slide = isSlide ? SLIDES[step] : null;
-  const accent = slide?.blob ?? "#FE8C00";
+  const primaryDisabled = busy || (key === "profile" && !name.trim());
+  const primaryLabel = key === "budget" ? "Start using Loaded" : key === "profile" ? "Continue" : "Next";
+  const onPrimary = key === "budget" ? saveBudgetAndFinish : key === "profile" ? saveProfileAndNext : next;
 
   return (
     <SafeAreaView className="flex-1 bg-white">
       <KeyboardAvoidingView behavior={Platform.OS === "ios" ? "padding" : undefined} className="flex-1">
         {/* Playful colour blobs */}
         <Animated.View
-          key={`blobA-${step}`}
+          key={`blob-${idx}`}
           entering={FadeIn.duration(600)}
           pointerEvents="none"
           style={{ position: "absolute", top: -70, right: -60, width: 240, height: 240, borderRadius: 120, backgroundColor: accent, opacity: 0.16 }}
         />
         <View pointerEvents="none" style={{ position: "absolute", bottom: 120, left: -70, width: 200, height: 200, borderRadius: 100, backgroundColor: "#6C63FF", opacity: 0.1 }} />
 
-        {/* Skip */}
-        {step < BUDGET_STEP && (
-          <Pressable onPress={finish} disabled={busy} className="absolute right-5 top-2 z-10 px-3 py-2">
-            <Text className="text-sm font-semibold text-gray-400">Skip</Text>
+        {/* Skip only jumps past the intro slides to the import decision — the
+            migration / name / email steps must be engaged with. */}
+        {isSlide && (
+          <Pressable onPress={() => setIdx(steps.indexOf("import"))} disabled={busy} className="absolute right-5 top-2 z-10 px-3 py-2">
+            <Text className="text-sm font-semibold text-gray-400">Skip intro</Text>
           </Pressable>
         )}
 
-        <View className="flex-1 px-6 justify-center">
+        <ScrollView
+          style={{ flex: 1 }}
+          contentContainerStyle={{ flexGrow: 1, justifyContent: "center", paddingHorizontal: 24 }}
+          keyboardShouldPersistTaps="handled"
+          showsVerticalScrollIndicator={false}
+        >
           {/* ---- Intro slides ---- */}
           {isSlide && slide && (
-            <Animated.View key={`slide-${step}`} entering={SlideInRight.duration(420)} exiting={SlideOutLeft.duration(260)}>
-              <Animated.Text key={`emoji-${step}`} entering={FadeIn.duration(500).delay(120)} style={{ fontSize: 84, marginBottom: 28 }}>
+            <Animated.View key={key} entering={SlideInRight.duration(420)} exiting={SlideOutLeft.duration(260)}>
+              <Animated.Text key={`emoji-${key}`} entering={FadeIn.duration(500).delay(120)} style={{ fontSize: 84, marginBottom: 28 }}>
                 {slide.emoji}
               </Animated.Text>
               <Text className="text-4xl font-bold text-dark-100 mb-4" style={{ lineHeight: 42 }}>{slide.title}</Text>
@@ -113,29 +121,8 @@ export default function OnboardingScreen() {
             </Animated.View>
           )}
 
-          {/* ---- Name capture ---- */}
-          {step === NAME_STEP && (
-            <Animated.View key="name" entering={SlideInRight.duration(420)} exiting={SlideOutLeft.duration(260)}>
-              <Animated.Text entering={FadeIn.duration(500).delay(120)} style={{ fontSize: 76, marginBottom: 24 }}>👋</Animated.Text>
-              <Text className="text-4xl font-bold text-dark-100 mb-3">What should we{"\n"}call you?</Text>
-              <Text className="text-lg text-gray-500 mb-8">Just a first name is perfect.</Text>
-              <TextInput
-                value={name}
-                onChangeText={setName}
-                placeholder="Your name"
-                placeholderTextColor="#9CA3AF"
-                autoFocus
-                autoCapitalize="words"
-                returnKeyType="done"
-                onSubmitEditing={() => name.trim() && next()}
-                className="px-5 py-4 rounded-2xl bg-gray-100 text-dark-100 text-lg"
-                style={{ paddingVertical: 16 }}
-              />
-            </Animated.View>
-          )}
-
           {/* ---- Import existing data ---- */}
-          {step === IMPORT_STEP && (
+          {key === "import" && (
             <Animated.View key="import" entering={SlideInRight.duration(420)} exiting={SlideOutLeft.duration(260)}>
               <Animated.Text entering={FadeIn.duration(500).delay(120)} style={{ fontSize: 76, marginBottom: 24 }}>📦</Animated.Text>
               <Text className="text-4xl font-bold text-dark-100 mb-3">Used Loaded{"\n"}before?</Text>
@@ -143,14 +130,51 @@ export default function OnboardingScreen() {
               <Pressable onPress={goImport} disabled={busy} className="py-4 rounded-2xl items-center bg-primary mb-3 active:opacity-80">
                 <Text className="text-white text-base font-bold">Yes, import my data</Text>
               </Pressable>
-              <Pressable onPress={() => setStep(BUDGET_STEP)} disabled={busy} className="py-4 rounded-2xl items-center bg-gray-100 active:opacity-80">
+              <Pressable onPress={next} disabled={busy} className="py-4 rounded-2xl items-center bg-gray-100 active:opacity-80">
                 <Text className="text-dark-100 text-base font-semibold">No, I&apos;m new here</Text>
               </Pressable>
             </Animated.View>
           )}
 
+          {/* ---- Profile capture (new users only) ---- */}
+          {key === "profile" && (
+            <Animated.View key="profile" entering={SlideInRight.duration(420)} exiting={SlideOutLeft.duration(260)}>
+              <Animated.Text entering={FadeIn.duration(500).delay(120)} style={{ fontSize: 76, marginBottom: 20 }}>👋</Animated.Text>
+              <Text className="text-4xl font-bold text-dark-100 mb-3">Tell us a{"\n"}little about you</Text>
+              <Text className="text-lg text-gray-500 mb-8">So we can personalise things. You can change these later.</Text>
+              <View className="gap-4">
+                <View>
+                  <Text className="text-sm font-semibold text-dark-100 mb-2">Name</Text>
+                  <TextInput
+                    value={name}
+                    onChangeText={setName}
+                    placeholder="Your name"
+                    placeholderTextColor="#9CA3AF"
+                    autoCapitalize="words"
+                    className="px-5 py-4 rounded-2xl bg-gray-100 text-dark-100 text-lg"
+                    style={{ paddingVertical: 16 }}
+                  />
+                </View>
+                <View>
+                  <Text className="text-sm font-semibold text-dark-100 mb-2">Email <Text className="text-gray-400 font-normal">(optional)</Text></Text>
+                  <TextInput
+                    value={email}
+                    onChangeText={setEmail}
+                    placeholder="your@email.com"
+                    placeholderTextColor="#9CA3AF"
+                    keyboardType="email-address"
+                    autoCapitalize="none"
+                    autoComplete="email"
+                    className="px-5 py-4 rounded-2xl bg-gray-100 text-dark-100 text-lg"
+                    style={{ paddingVertical: 16 }}
+                  />
+                </View>
+              </View>
+            </Animated.View>
+          )}
+
           {/* ---- Budget setup ---- */}
-          {step === BUDGET_STEP && (
+          {key === "budget" && (
             <Animated.View key="budget" entering={SlideInRight.duration(420)} exiting={SlideOutLeft.duration(260)}>
               <Animated.Text entering={FadeIn.duration(500).delay(120)} style={{ fontSize: 76, marginBottom: 24 }}>🎯</Animated.Text>
               <Text className="text-4xl font-bold text-dark-100 mb-3">Set your{"\n"}monthly budget</Text>
@@ -163,53 +187,43 @@ export default function OnboardingScreen() {
                   placeholder="2,500"
                   placeholderTextColor="#9CA3AF"
                   keyboardType="decimal-pad"
-                  autoFocus
                   className="flex-1 py-4 text-dark-100 text-2xl font-bold"
                   style={{ paddingVertical: 16 }}
                 />
               </View>
             </Animated.View>
           )}
-        </View>
+        </ScrollView>
 
         {/* ---- Footer: progress dots + primary button ---- */}
         <View className="px-6 pb-4">
           <View className="flex-row items-center justify-center gap-2 mb-6">
-            {Array.from({ length: TOTAL }).map((_, i) => (
+            {steps.map((_, i) => (
               <View
                 key={i}
-                style={{
-                  height: 8,
-                  width: i === step ? 24 : 8,
-                  borderRadius: 4,
-                  backgroundColor: i === step ? "#FE8C00" : "#E5E7EB",
-                }}
+                style={{ height: 8, width: i === idx ? 24 : 8, borderRadius: 4, backgroundColor: i === idx ? "#FE8C00" : "#E5E7EB" }}
               />
             ))}
           </View>
 
-          {step !== IMPORT_STEP && (
+          {key !== "import" && (
             <Pressable
-              onPress={step === BUDGET_STEP ? saveBudgetAndFinish : next}
-              disabled={busy || (step === NAME_STEP && !name.trim())}
-              className={`py-4 rounded-2xl flex-row items-center justify-center gap-2 ${
-                busy || (step === NAME_STEP && !name.trim()) ? "bg-gray-300" : "bg-primary"
-              } active:opacity-80`}
+              onPress={onPrimary}
+              disabled={primaryDisabled}
+              className={`py-4 rounded-2xl flex-row items-center justify-center gap-2 ${primaryDisabled ? "bg-gray-300" : "bg-primary"} active:opacity-80`}
             >
               {busy ? (
                 <ActivityIndicator color="#fff" />
               ) : (
                 <>
-                  <Text className="text-white text-base font-bold">
-                    {step === BUDGET_STEP ? "Start using Loaded" : step === NAME_STEP ? "Continue" : "Next"}
-                  </Text>
+                  <Text className="text-white text-base font-bold">{primaryLabel}</Text>
                   <Feather name="arrow-right" size={18} color="#fff" />
                 </>
               )}
             </Pressable>
           )}
 
-          {step === BUDGET_STEP && (
+          {key === "budget" && (
             <Pressable onPress={finish} disabled={busy} className="py-3 items-center">
               <Text className="text-gray-400 font-semibold">Set it up later</Text>
             </Pressable>

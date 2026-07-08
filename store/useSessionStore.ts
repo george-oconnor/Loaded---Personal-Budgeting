@@ -151,17 +151,30 @@ export const useSessionStore = create<SessionState>((set) => ({
     }
   },
 
-  setUserName: async (name: string) => {
+  setUserName: async (name: string, email?: string) => {
     const trimmed = name.trim();
-    if (!trimmed) return;
+    const trimmedEmail = email?.trim();
+    if (!trimmed && !trimmedEmail) return;
     const state = useSessionStore.getState();
     const userId = state.user?.id;
     const [firstName, ...rest] = trimmed.split(" ");
-    if (userId) {
-      await updateUserProfile(userId, { firstName: firstName ?? "", lastName: rest.join(" ") }).catch(() => {});
+
+    const profileUpdate: Record<string, any> = {};
+    if (trimmed) {
+      profileUpdate.firstName = firstName ?? "";
+      profileUpdate.lastName = rest.join(" ");
     }
-    setSentryUser({ id: userId ?? "", email: state.user?.email, username: trimmed });
-    set({ user: state.user ? { ...state.user, name: trimmed } : state.user });
+    if (trimmedEmail) profileUpdate.email = trimmedEmail;
+
+    if (userId && Object.keys(profileUpdate).length) {
+      await updateUserProfile(userId, profileUpdate).catch(() => {});
+    }
+
+    const nextUser = state.user
+      ? { ...state.user, ...(trimmed ? { name: trimmed } : {}), ...(trimmedEmail ? { email: trimmedEmail } : {}) }
+      : state.user;
+    setSentryUser({ id: userId ?? "", email: nextUser?.email, username: nextUser?.name });
+    set({ user: nextUser });
   },
 
   completeOnboarding: async () => {
