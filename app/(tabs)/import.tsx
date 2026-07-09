@@ -28,6 +28,13 @@ const IMPORT_OPTIONS = [
     color: "#0EA5E9",
   },
   {
+    id: "boi",
+    name: "Bank of Ireland",
+    icon: "home",
+    description: "Import transactions from Bank of Ireland statements",
+    color: "#0D9488",
+  },
+  {
     id: "revolut",
     name: "Revolut",
     icon: "credit-card",
@@ -48,6 +55,9 @@ export default function ImportTabScreen() {
     switch (optionId) {
       case "aib":
         router.push("/import/aib" as any);
+        break;
+      case "boi":
+        router.push("/import/boi" as any);
         break;
       case "revolut":
         router.push("/import/revolut");
