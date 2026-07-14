@@ -46,6 +46,17 @@
         "CLOUDKIT_ENV": "Development"
       }
     },
+    "internal": {
+      "extends": "_base",
+      "distribution": "internal",
+      "ios": {
+        "resourceClass": "medium"
+      },
+      "env": {
+        "EXPO_PUBLIC_BACKEND": "cloudkit",
+        "CLOUDKIT_ENV": "Production"
+      }
+    },
     "production": {
       "extends": "_base",
       "ios": {

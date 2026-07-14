@@ -14,6 +14,7 @@ import { captureException } from "@/lib/sentry";
 import type { Transaction } from "@/types/type";
 import AsyncStorage from "@react-native-async-storage/async-storage";
 import { create } from "zustand";
+import { createJSONStorage, persist } from "zustand/middleware";
 import { useHomeStore } from "./useHomeStore";
 import { useSessionStore } from "./useSessionStore";
 
@@ -38,6 +39,7 @@ type SubscriptionsState = {
   loading: boolean;
   error: string | null;
   lastFetched: number | null;
+  cachedUserId?: string;
 
   fetchAll: (force?: boolean) => Promise<void>;
   confirmSubscription: (payment: RecurringPayment) => void;
@@ -111,7 +113,9 @@ async function saveDismissed(merchants: string[]) {
   await AsyncStorage.setItem(DISMISSED_KEY, JSON.stringify(merchants));
 }
 
-export const useSubscriptionsStore = create<SubscriptionsState>((set, get) => ({
+export const useSubscriptionsStore = create<SubscriptionsState>()(
+  persist(
+    (set, get) => ({
   potentialSubscriptions: [],
   confirmedSubscriptions: [],
   dismissedMerchants: [],
@@ -119,16 +123,23 @@ export const useSubscriptionsStore = create<SubscriptionsState>((set, get) => ({
   loading: false,
   error: null,
   lastFetched: null,
+  cachedUserId: undefined,
 
   fetchAll: async (force = false) => {
     const user = useSessionStore.getState().user;
     if (!user?.id) return;
 
-    // Skip re-fetch if data loaded recently (2 min) unless forced
-    const { lastFetched, confirmedSubscriptions } = get();
-    if (!force && lastFetched && Date.now() - lastFetched < 120_000 && confirmedSubscriptions.length > 0) return;
+    const { lastFetched, confirmedSubscriptions, cachedUserId } = get();
+    // Drop cache belonging to a different user.
+    if (cachedUserId && cachedUserId !== user.id) {
+      set({ confirmedSubscriptions: [], potentialSubscriptions: [], earlyPayments: [], lastFetched: null, cachedUserId: undefined });
+    } else if (!force && lastFetched && Date.now() - lastFetched < 120_000 && confirmedSubscriptions.length > 0) {
+      return; // cache still fresh
+    }
 
-    set({ loading: true, error: null });
+    // Cache-first: only block the UI when there is nothing cached to show.
+    const hasCache = get().confirmedSubscriptions.length > 0;
+    set(hasCache ? { error: null } : { loading: true, error: null });
     try {
       // Load dismissed list from local storage
       const dismissed = await loadDismissed();
@@ -225,6 +236,7 @@ export const useSubscriptionsStore = create<SubscriptionsState>((set, get) => ({
         earlyPayments: earlyPaid,
         loading: false,
         lastFetched: Date.now(),
+        cachedUserId: user.id,
       });
     } catch (err) {
       captureException(err as Error);
@@ -562,4 +574,18 @@ export const useSubscriptionsStore = create<SubscriptionsState>((set, get) => ({
       })
       .catch(() => {});
   },
-}));
+    }),
+    {
+      name: "subscriptions-store-cache-v1",
+      storage: createJSONStorage(() => AsyncStorage),
+      partialize: (s) => ({
+        confirmedSubscriptions: s.confirmedSubscriptions,
+        potentialSubscriptions: s.potentialSubscriptions,
+        dismissedMerchants: s.dismissedMerchants,
+        earlyPayments: s.earlyPayments,
+        lastFetched: s.lastFetched,
+        cachedUserId: s.cachedUserId,
+      }),
+    }
+  )
+);
