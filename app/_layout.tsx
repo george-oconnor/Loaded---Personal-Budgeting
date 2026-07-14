@@ -18,6 +18,11 @@ import './globals.css';
 // Initialize Sentry before app renders
 initSentry();
 
+// Stable navigator option references (inline objects re-render the navigator
+// and React Navigation's internal PreventRemoveProvider on every render).
+const STACK_SCREEN_OPTIONS = { headerShown: false } as const;
+const TABS_STACK_OPTIONS = { gestureEnabled: false } as const;
+
 // Global unhandled promise rejection handler
 if (typeof global !== 'undefined') {
   const originalHandler = global.Promise;
@@ -426,8 +431,8 @@ export default function RootLayout() {
   return (
     <ErrorBoundary fallback={ErrorFallback}>
       <GestureHandlerRootView style={{ flex: 1 }}>
-        <Stack screenOptions={{ headerShown: false }}>
-          <Stack.Screen name="(tabs)" options={{ gestureEnabled: false }} />
+        <Stack screenOptions={STACK_SCREEN_OPTIONS}>
+          <Stack.Screen name="(tabs)" options={TABS_STACK_OPTIONS} />
         </Stack>
         <NotificationTray />
         {status === "icloud-unavailable" && <ICloudGate />}

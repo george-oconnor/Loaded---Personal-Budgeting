@@ -86,12 +86,14 @@ function FloatingTabBar({ state, descriptors, navigation }: BottomTabBarProps) {
   );
 }
 
+// Stable references so the Tabs navigator doesn't re-render its screens (and
+// React Navigation's internal PreventRemoveProvider) on every parent render.
+const TAB_SCREEN_OPTIONS = { headerShown: false } as const;
+const renderTabBar = (props: BottomTabBarProps) => <FloatingTabBar {...props} />;
+
 export default function TabsLayout() {
   return (
-    <Tabs
-      tabBar={(props) => <FloatingTabBar {...props} />}
-      screenOptions={{ headerShown: false }}
-    >
+    <Tabs tabBar={renderTabBar} screenOptions={TAB_SCREEN_OPTIONS}>
       <Tabs.Screen name="index" />
       <Tabs.Screen name="subs" />
       <Tabs.Screen name="import" />
