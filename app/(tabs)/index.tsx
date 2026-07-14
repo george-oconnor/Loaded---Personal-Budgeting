@@ -29,6 +29,7 @@ export default function Index() {
     categories,
     loading,
     fetchHome,
+    refreshHomeIfStale,
     cycleType,
     cycleDay,
   } = useHomeStore();
@@ -39,29 +40,29 @@ export default function Index() {
   const appState = useRef(AppState.currentState);
 
   useEffect(() => {
-    // Only fetch when user is available
+    // Cache-first: render persisted data instantly, only hit the network if the
+    // cache is missing or stale.
     if (user?.id) {
-      fetchHome();
+      refreshHomeIfStale();
     }
-  }, [user?.id, fetchHome]);
+  }, [user?.id, refreshHomeIfStale]);
 
-  // Refresh when app comes back to the foreground only if data isn't loaded
+  // On foreground, refresh in the background only if the cache is stale.
   useEffect(() => {
     const subscription = AppState.addEventListener("change", (nextAppState) => {
       if (
         appState.current.match(/inactive|background/) &&
         nextAppState === "active" &&
-        user?.id &&
-        !useHomeStore.getState().summary
+        user?.id
       ) {
-        fetchHome();
+        refreshHomeIfStale();
         setRefreshTrigger((prev) => prev + 1);
       }
       appState.current = nextAppState;
     });
 
     return () => subscription.remove();
-  }, [user?.id, fetchHome]);
+  }, [user?.id, refreshHomeIfStale]);
 
   const handleRefresh = async () => {
     setRefreshing(true);
@@ -82,8 +83,9 @@ export default function Index() {
     [transactions, cycleType, cycleDay]
   );
 
-  // Show loading splash until initial data is loaded
-  if (loading) {
+  // Only show the full splash on a genuine first load (no cached data yet).
+  // With cache present we render instantly and refresh in the background.
+  if (loading && !summary) {
     return <LoadingSplash />;
   }
 

@@ -9,20 +9,30 @@ import { getCycleEndDateForCycleStart, getCycleStartDateWithOffset, getTransacti
 import { captureException } from "@/lib/sentry";
 import { getQueuedTransactions } from "@/lib/syncQueue";
 import type { Category, Summary, Transaction } from "@/types/type";
+import AsyncStorage from "@react-native-async-storage/async-storage";
 import { create } from "zustand";
+import { createJSONStorage, persist } from "zustand/middleware";
 import { useSessionStore } from "./useSessionStore";
+
+// How long cached home data is considered fresh before a background refresh.
+const HOME_TTL_MS = 45_000;
 
 type HomeState = {
   summary: Summary | null;
   categories: Category[];
   selectedCategory: string;
   transactions: Transaction[];
-  loading: boolean;
+  loading: boolean;        // true only on first load with no cache (blocks UI)
+  refreshing: boolean;     // background refresh while cache is shown
   error: string | null;
+  lastFetched: number;     // epoch ms of last successful fetch
+  cachedUserId?: string;   // guards against showing another user's cached data
   cycleType: "first_working_day" | "last_working_day" | "specific_date" | "last_friday";
   cycleDay?: number;
   oldestCycleLoaded: number; // Track the oldest cycle offset we've loaded (e.g., -6)
   fetchHome: () => Promise<void>;
+  refreshHomeIfStale: () => Promise<void>; // cache-first: only fetch if stale/empty
+  clearHome: () => void;
   fetchOlderTransactions: (cyclesBack: number) => Promise<void>; // Load more historical data
   setCategory: (id: string) => void;
 };
@@ -82,18 +92,26 @@ const mockSummary: Summary = {
   monthlyBudget: 300000,
 };
 
-export const useHomeStore = create<HomeState>((set, get) => ({
+export const useHomeStore = create<HomeState>()(
+  persist(
+    (set, get) => ({
   summary: null,
   categories: mockCategories,
   selectedCategory: "all",
   transactions: [],
   loading: false,
+  refreshing: false,
   error: null,
+  lastFetched: 0,
+  cachedUserId: undefined,
   cycleType: "first_working_day",
   cycleDay: undefined,
   oldestCycleLoaded: -6, // Initially load 6 cycles back
   fetchHome: async () => {
-    set({ loading: true, error: null });
+    // Cache-first: only block the UI on a genuine first load (no cached summary);
+    // otherwise refresh in the background while the cached data stays on screen.
+    const hasCache = !!get().summary;
+    set(hasCache ? { refreshing: true, error: null } : { loading: true, error: null });
     try {
       const now = new Date();
       const user = useSessionStore.getState().user;
@@ -103,7 +121,7 @@ export const useHomeStore = create<HomeState>((set, get) => ({
       
       if (!userId) {
         console.warn("fetchHome - no user ID, cannot fetch transactions");
-        set({ summary: null, transactions: [], loading: false, error: "No user logged in" });
+        set({ summary: null, transactions: [], loading: false, refreshing: false, error: "No user logged in" });
         return;
       }
 
@@ -111,7 +129,7 @@ export const useHomeStore = create<HomeState>((set, get) => ({
       if (!envOk) {
         // Fallback to mock if env not configured
         await new Promise((resolve) => setTimeout(resolve, 120));
-        set({ summary: mockSummary, transactions: mockTransactions, loading: false });
+        set({ summary: mockSummary, transactions: mockTransactions, loading: false, refreshing: false, lastFetched: Date.now() });
         return;
       }
 
@@ -298,14 +316,32 @@ export const useHomeStore = create<HomeState>((set, get) => ({
         cycleDay: budgetDoc.cycleDay,
         oldestCycleLoaded: -6, // Reset to initial load range
         loading: false,
+        refreshing: false,
+        lastFetched: Date.now(),
+        cachedUserId: userId,
       });
     } catch (err) {
       const errorMsg = err instanceof Error ? err.message : "Failed to load home data";
       console.warn("❌ Fetch home data failed:", errorMsg, err);
       captureException(err instanceof Error ? err : new Error(errorMsg), { userId: "demo-user" });
-      set({ error: errorMsg, loading: false });
+      set({ error: errorMsg, loading: false, refreshing: false });
     }
   },
+  refreshHomeIfStale: async () => {
+    const userId = useSessionStore.getState().user?.id;
+    const s = get();
+    // Different user than the cached data → drop the stale cache and reload.
+    if (s.cachedUserId && s.cachedUserId !== userId) {
+      set({ summary: null, transactions: [], categories: mockCategories, lastFetched: 0, cachedUserId: undefined });
+      await get().fetchHome();
+      return;
+    }
+    if (s.loading || s.refreshing) return; // a fetch is already in flight
+    const stale = !s.summary || Date.now() - s.lastFetched > HOME_TTL_MS;
+    if (stale) await get().fetchHome();
+  },
+  clearHome: () =>
+    set({ summary: null, transactions: [], categories: mockCategories, selectedCategory: "all", lastFetched: 0, cachedUserId: undefined }),
   fetchOlderTransactions: async (cyclesBack: number) => {
     const { cycleType, cycleDay, oldestCycleLoaded, transactions } = get();
     const user = useSessionStore.getState().user;
@@ -377,4 +413,24 @@ export const useHomeStore = create<HomeState>((set, get) => ({
     }
   },
   setCategory: (id) => set({ selectedCategory: id || "all" }),
-}));
+    }),
+    {
+      name: "home-store-cache-v1",
+      storage: createJSONStorage(() => AsyncStorage),
+      // Persist only the data slices, never the transient loading/error flags.
+      partialize: (s) => ({
+        summary: s.summary,
+        categories: s.categories,
+        selectedCategory: s.selectedCategory,
+        // Cache only the most-recent slice for instant render; the full range
+        // reloads from the network. Keeps the persisted blob small/fast to write.
+        transactions: s.transactions.slice(0, 200),
+        cycleType: s.cycleType,
+        cycleDay: s.cycleDay,
+        oldestCycleLoaded: s.oldestCycleLoaded,
+        lastFetched: s.lastFetched,
+        cachedUserId: s.cachedUserId,
+      }),
+    }
+  )
+);
