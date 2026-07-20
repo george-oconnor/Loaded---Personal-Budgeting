@@ -37,10 +37,14 @@ yarn-error.*
 
 # macOS
 .DS_Store
+._*
 *.pem
 
 # local env files
 .env*.local
+
+# Claude Code local settings
+.claude/
 
 # typescript
 *.tsbuildinfo
