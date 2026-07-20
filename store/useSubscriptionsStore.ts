@@ -12,9 +12,10 @@ import { cancelSubscriptionReminder, scheduleSubscriptionReminder } from "@/lib/
 import { detectRecurringPayments, estimateNextDate, type RecurringFrequency, type RecurringPayment } from "@/lib/recurringPayments";
 import { captureException } from "@/lib/sentry";
 import type { Transaction } from "@/types/type";
+import { debouncedPersistStorage } from "@/lib/persistStorage";
 import AsyncStorage from "@react-native-async-storage/async-storage";
 import { create } from "zustand";
-import { createJSONStorage, persist } from "zustand/middleware";
+import { persist } from "zustand/middleware";
 import { useHomeStore } from "./useHomeStore";
 import { useSessionStore } from "./useSessionStore";
 
@@ -577,7 +578,7 @@ export const useSubscriptionsStore = create<SubscriptionsState>()(
     }),
     {
       name: "subscriptions-store-cache-v1",
-      storage: createJSONStorage(() => AsyncStorage),
+      storage: debouncedPersistStorage(),
       partialize: (s) => ({
         confirmedSubscriptions: s.confirmedSubscriptions,
         potentialSubscriptions: s.potentialSubscriptions,

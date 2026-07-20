@@ -9,9 +9,9 @@ import { getCycleEndDateForCycleStart, getCycleStartDateWithOffset, getTransacti
 import { captureException } from "@/lib/sentry";
 import { getQueuedTransactions } from "@/lib/syncQueue";
 import type { Category, Summary, Transaction } from "@/types/type";
-import AsyncStorage from "@react-native-async-storage/async-storage";
+import { debouncedPersistStorage } from "@/lib/persistStorage";
 import { create } from "zustand";
-import { createJSONStorage, persist } from "zustand/middleware";
+import { persist } from "zustand/middleware";
 import { useSessionStore } from "./useSessionStore";
 
 // How long cached home data is considered fresh before a background refresh.
@@ -416,7 +416,7 @@ export const useHomeStore = create<HomeState>()(
     }),
     {
       name: "home-store-cache-v1",
-      storage: createJSONStorage(() => AsyncStorage),
+      storage: debouncedPersistStorage(),
       // Persist only the data slices, never the transient loading/error flags.
       partialize: (s) => ({
         summary: s.summary,
