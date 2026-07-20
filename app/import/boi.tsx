@@ -41,7 +41,7 @@ export default function BoiImportScreen() {
   const openBoiSite = async () => {
     setOpening(true);
     try {
-      await Linking.openURL("https://www.bankofireland.com/");
+      await Linking.openURL("https://www.365online.com/Digital/servletcontroller");
     } catch {
       Alert.alert("Error", "Could not open Bank of Ireland. Please open it manually.");
     } finally {
