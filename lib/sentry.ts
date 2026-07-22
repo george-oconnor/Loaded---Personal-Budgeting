@@ -87,6 +87,17 @@ export function clearUser() {
   Sentry.setUser(null);
 }
 
+// Helper to time an operation as a Sentry performance span (visible in the
+// Sentry dashboard under Performance, grouped by `name`/`op`).
+export function withSpan<T>(
+  name: string,
+  op: string,
+  attributes: Record<string, string | number | boolean> | undefined,
+  callback: () => T | Promise<T>
+): T | Promise<T> {
+  return Sentry.startSpan({ name, op, attributes }, callback);
+}
+
 // Helper to add breadcrumbs for tracking user flow
 export function addBreadcrumb(breadcrumb: {
   message: string;

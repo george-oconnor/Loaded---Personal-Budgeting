@@ -1,9 +1,11 @@
 import { saveBalanceSnapshot, updateAccountBalance, upsertBalanceRemote } from "@/lib/accountBalances";
 import { recordImportBalanceHistory } from "@/lib/balanceHistory";
-import { getAllTransactionsForUser, getConfirmedSubscriptions, updateTransaction } from "@/lib/backend";
+import { getConfirmedSubscriptions, updateTransaction } from "@/lib/backend";
 import { getTransferCategoryId } from "@/lib/categorization";
 import { detectAibTransfers, detectCrossBankTransfers } from "@/lib/csvParser";
+import { getExistingTransactionsSince, invalidateExistingTransactionsCache } from "@/lib/existingTransactionsCache";
 import { saveLastImportDate } from "@/lib/notifications";
+import { withSpan } from "@/lib/sentry";
 import { getQueuedTransactions, queueTransactionsForSync, updateQueuedTransactions } from "@/lib/syncQueue";
 import { matchTransactionToSubscription } from "@/lib/subscriptionMatcher";
 import { useHomeStore } from "@/store/useHomeStore";
@@ -53,6 +55,10 @@ const makeKeyFromDoc = (doc: any) => {
     ? Math.abs(Number(doc.originalAmount))
     : Math.abs(Number(doc.amount));
   return `${normalizeText(doc.title || "")}|${amount}|${doc.kind}|${dateOnlyKey(doc.date || "")}`;
+};
+const earliestDateISO = (txs: { date: string }[]) => {
+  const times = txs.map((t) => new Date(t.date).getTime()).filter((t) => !Number.isNaN(t));
+  return new Date(times.length ? Math.min(...times) : 0).toISOString();
 };
 
 export default function ImportPreviewScreen() {
@@ -116,59 +122,62 @@ export default function ImportPreviewScreen() {
     const runPrecheck = async () => {
       if (!user?.id || transactions.length === 0) return;
       try {
-        console.log('Starting precheck - fetching all transactions...');
-        const startTime = Date.now();
-        const [existing, queuedTxs] = await Promise.all([
-          getAllTransactionsForUser(user.id),
-          getQueuedTransactions()
-        ]);
-        console.log(`Fetched ${existing.length} DB + ${queuedTxs.length} queued transactions in ${Date.now() - startTime}ms`);
-        
-        // Use a count map so each existing transaction can only match one import
-        const existingKeyCounts = new Map<string, number>();
-        for (const doc of existing) {
-          const key = makeKeyFromDoc(doc);
-          existingKeyCounts.set(key, (existingKeyCounts.get(key) || 0) + 1);
-        }
-        // Also include queued (not-yet-synced) transactions for dedup
-        for (const q of queuedTxs) {
-          const key = makeKeyFromTransaction({
-            title: q.title,
-            subtitle: q.subtitle,
-            amount: Math.abs(q.amount),
-            kind: q.kind,
-            date: q.date,
-            categoryId: q.categoryId,
-            currency: q.currency,
-            displayName: q.displayName,
-          } as any);
-          existingKeyCounts.set(key, (existingKeyCounts.get(key) || 0) + 1);
-        }
-        const dupIndices = new Set<number>();
-        let unique = 0;
-        let skipped = 0;
-        for (let i = 0; i < transactions.length; i++) {
-          const t = transactions[i];
-          // Skip zero-amount transactions (consistent with actual import)
-          if (zeroAmountIndices.has(i)) {
-            skipped++;
-            continue;
+        await withSpan(
+          "import.precheck",
+          "function",
+          { transactionCount: transactions.length },
+          async () => {
+            const [existing, queuedTxs] = await Promise.all([
+              getExistingTransactionsSince(user.id, earliestDateISO(transactions)),
+              getQueuedTransactions()
+            ]);
+
+            // Use a count map so each existing transaction can only match one import
+            const existingKeyCounts = new Map<string, number>();
+            for (const doc of existing) {
+              const key = makeKeyFromDoc(doc);
+              existingKeyCounts.set(key, (existingKeyCounts.get(key) || 0) + 1);
+            }
+            // Also include queued (not-yet-synced) transactions for dedup
+            for (const q of queuedTxs) {
+              const key = makeKeyFromTransaction({
+                title: q.title,
+                subtitle: q.subtitle,
+                amount: Math.abs(q.amount),
+                kind: q.kind,
+                date: q.date,
+                categoryId: q.categoryId,
+                currency: q.currency,
+                displayName: q.displayName,
+              } as any);
+              existingKeyCounts.set(key, (existingKeyCounts.get(key) || 0) + 1);
+            }
+            const dupIndices = new Set<number>();
+            let unique = 0;
+            let skipped = 0;
+            for (let i = 0; i < transactions.length; i++) {
+              const t = transactions[i];
+              // Skip zero-amount transactions (consistent with actual import)
+              if (zeroAmountIndices.has(i)) {
+                skipped++;
+                continue;
+              }
+              const key = makeKeyFromTransaction(t);
+              const remaining = existingKeyCounts.get(key) || 0;
+              if (remaining > 0) {
+                existingKeyCounts.set(key, remaining - 1);
+                skipped++;
+                dupIndices.add(i);
+                continue;
+              }
+              unique++;
+            }
+            setPreSkippedCount(skipped);
+            setPreUniqueCount(unique);
+            setDuplicateKeys(dupIndices);
+            setPrecheckDone(true);
           }
-          const key = makeKeyFromTransaction(t);
-          const remaining = existingKeyCounts.get(key) || 0;
-          if (remaining > 0) {
-            existingKeyCounts.set(key, remaining - 1);
-            skipped++;
-            dupIndices.add(i);
-            continue;
-          }
-          unique++;
-        }
-        setPreSkippedCount(skipped);
-        setPreUniqueCount(unique);
-        setDuplicateKeys(dupIndices);
-        setPrecheckDone(true);
-        console.log(`Precheck complete: ${unique} unique, ${skipped} duplicates`);
+        );
       } catch (e) {
         console.warn("Precheck dedupe failed:", e);
       }
@@ -202,10 +211,16 @@ export default function ImportPreviewScreen() {
 
       console.log('Step 1: Fetching existing transactions from DB and queue...');
       const step1Start = Date.now();
-      const [existingDb, queuedTransactions] = await Promise.all([
-        getAllTransactionsForUser(user.id),
-        getQueuedTransactions()
-      ]);
+      // Shares the precheck's cached fetch (same user + date range) instead of hitting the backend again.
+      const [existingDb, queuedTransactions] = await withSpan(
+        "import.fetch_existing_and_queued",
+        "function",
+        { transactionCount: transactions.length },
+        () => Promise.all([
+          getExistingTransactionsSince(user.id, earliestDateISO(transactions)),
+          getQueuedTransactions()
+        ])
+      );
       // Combine database and queued transactions for transfer detection
       const existing = [...existingDb];
       console.log(`Step 1 complete: Fetched ${existingDb.length} from DB + ${queuedTransactions.length} from queue in ${Date.now() - step1Start}ms`);
@@ -446,7 +461,11 @@ export default function ImportPreviewScreen() {
           };
         })
       );
-      
+
+      // These transactions now exist in the backend — drop the cached
+      // "existing transactions" snapshot so the next dedup check sees them.
+      invalidateExistingTransactionsCache(user.id);
+
       // Update existing transactions with matched transfer IDs
       const dbUpdates: Array<Promise<any>> = [];
       const queueUpdates: Array<{ id: string; updates: Partial<any> }> = [];

@@ -1,10 +1,12 @@
 import { saveBalanceSnapshot, updateAccountBalance, upsertBalanceRemote } from "@/lib/accountBalances";
 import { recordImportBalanceHistory } from "@/lib/balanceHistory";
-import { getAllTransactionsForUser, getConfirmedSubscriptions, updateTransaction } from "@/lib/backend";
+import { getConfirmedSubscriptions, getTransactionsByBatchId, updateTransaction } from "@/lib/backend";
 import { getTransferCategoryId } from "@/lib/categorization";
 import { detectTransferPairs, ParsedTransaction } from "@/lib/csvParser";
 import { formatCurrency } from "@/lib/currencyFunctions";
+import { getExistingTransactionsSince, invalidateExistingTransactionsCache } from "@/lib/existingTransactionsCache";
 import { saveLastImportDate } from "@/lib/notifications";
+import { withSpan } from "@/lib/sentry";
 import { queueTransactionsForSync } from "@/lib/syncQueue";
 import { matchTransactionToSubscription } from "@/lib/subscriptionMatcher";
 import { useSessionStore } from "@/store/useSessionStore";
@@ -52,6 +54,10 @@ const makeKeyFromDoc = (doc: any) => {
     ? Math.abs(Number(doc.originalAmount))
     : Math.abs(Number(doc.amount));
   return `${normalizeText(doc.title || "")}|${amount}|${doc.kind}|${normalizeDateForKey(doc.date || "")}`;
+};
+const earliestDateISO = (txs: { date: string }[]) => {
+  const times = txs.map((t) => new Date(t.date).getTime()).filter((t) => !Number.isNaN(t));
+  return new Date(times.length ? Math.min(...times) : 0).toISOString();
 };
 
 export default function GenericCSVPreviewScreen() {
@@ -113,31 +119,38 @@ export default function GenericCSVPreviewScreen() {
     const runPrecheck = async () => {
       if (!user?.id || transactions.length === 0) return;
       try {
-        const existing = await getAllTransactionsForUser(user.id);
-        // Use a count map so each existing transaction can only match one import
-        const existingKeyCounts = new Map<string, number>();
-        for (const doc of existing) {
-          const key = makeKeyFromDoc(doc);
-          existingKeyCounts.set(key, (existingKeyCounts.get(key) || 0) + 1);
-        }
-        const dupIndices = new Set<number>();
-        let unique = 0;
-        let skipped = 0;
-        for (let i = 0; i < transactions.length; i++) {
-          const key = makeKeyFromTransaction(transactions[i]);
-          const remaining = existingKeyCounts.get(key) || 0;
-          if (remaining > 0) {
-            existingKeyCounts.set(key, remaining - 1);
-            skipped++;
-            dupIndices.add(i);
-            continue;
+        await withSpan(
+          "import.precheck",
+          "function",
+          { transactionCount: transactions.length },
+          async () => {
+            const existing = await getExistingTransactionsSince(user.id, earliestDateISO(transactions));
+            // Use a count map so each existing transaction can only match one import
+            const existingKeyCounts = new Map<string, number>();
+            for (const doc of existing) {
+              const key = makeKeyFromDoc(doc);
+              existingKeyCounts.set(key, (existingKeyCounts.get(key) || 0) + 1);
+            }
+            const dupIndices = new Set<number>();
+            let unique = 0;
+            let skipped = 0;
+            for (let i = 0; i < transactions.length; i++) {
+              const key = makeKeyFromTransaction(transactions[i]);
+              const remaining = existingKeyCounts.get(key) || 0;
+              if (remaining > 0) {
+                existingKeyCounts.set(key, remaining - 1);
+                skipped++;
+                dupIndices.add(i);
+                continue;
+              }
+              unique++;
+            }
+            setPreSkippedCount(skipped);
+            setPreUniqueCount(unique);
+            setDuplicateKeys(dupIndices);
+            setPrecheckDone(true);
           }
-          unique++;
-        }
-        setPreSkippedCount(skipped);
-        setPreUniqueCount(unique);
-        setDuplicateKeys(dupIndices);
-        setPrecheckDone(true);
+        );
       } catch (e) {
         console.warn("Precheck dedupe failed:", e);
         // Still allow import even if precheck fails
@@ -168,8 +181,9 @@ export default function GenericCSVPreviewScreen() {
     try {
       console.log(`Starting generic CSV import of ${transactions.length} transactions`);
 
-      // Fetch existing transactions to dedupe and detect transfers
-      const existing = await getAllTransactionsForUser(user.id);
+      // Fetch existing transactions to dedupe and detect transfers.
+      // Shares the precheck's cached fetch (same user + date range) instead of hitting the backend again.
+      const existing = await getExistingTransactionsSince(user.id, earliestDateISO(transactions));
       // Use a count map so each existing transaction can only match one import
       const existingKeyCounts = new Map<string, number>();
       for (const doc of existing) {
@@ -243,6 +257,10 @@ export default function GenericCSVPreviewScreen() {
         })
       );
 
+      // These transactions now exist in the backend — drop the cached
+      // "existing transactions" snapshot so the next dedup check sees them.
+      invalidateExistingTransactionsCache(user.id);
+
       // Link internal transfer pairs after sync
       if (internalTransferPairs.length > 0 && queuedTxs?.length) {
         console.log(`Waiting to link ${internalTransferPairs.length} internal transfer pairs...`);
@@ -250,8 +268,9 @@ export default function GenericCSVPreviewScreen() {
         // Wait a bit for transactions to sync and get IDs
         await new Promise(resolve => setTimeout(resolve, 2000));
         
-        // Get fresh transaction list to find the synced transaction IDs
-        const syncedTransactions = await getAllTransactionsForUser(user.id);
+        // Get fresh transaction list to find the synced transaction IDs.
+        // Scoped to this batch instead of the user's whole history.
+        const syncedTransactions = await getTransactionsByBatchId(user.id, importBatchId);
         
         // Create a map of transaction key -> ID for matching
         const txMap = new Map<string, string>();
