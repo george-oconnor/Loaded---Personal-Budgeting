@@ -43,9 +43,7 @@ public class PdfTextExtractorModule: Module {
       throw NSError(domain: "PdfTextExtractor", code: 1, userInfo: [NSLocalizedDescriptionKey: "Invalid file path"])
     }
 
-    guard let document = PDFDocument(url: url) else {
-      throw NSError(domain: "PdfTextExtractor", code: 2, userInfo: [NSLocalizedDescriptionKey: "Could not open PDF"])
-    }
+    let document = try Self.loadDocument(at: url)
 
     let pageCount = document.pageCount
 
@@ -77,9 +75,7 @@ public class PdfTextExtractorModule: Module {
       throw NSError(domain: "PdfTextExtractor", code: 1, userInfo: [NSLocalizedDescriptionKey: "Invalid file path"])
     }
 
-    guard let document = PDFDocument(url: url) else {
-      throw NSError(domain: "PdfTextExtractor", code: 2, userInfo: [NSLocalizedDescriptionKey: "Could not open PDF"])
-    }
+    let document = try Self.loadDocument(at: url)
 
     let pageCount = document.pageCount
     var pages: [[String: Any]] = []
@@ -199,6 +195,44 @@ public class PdfTextExtractorModule: Module {
     }.joined(separator: "\n")
 
     return text
+  }
+
+  // MARK: - Document Loading
+
+  /// Loads a PDFDocument robustly: checks the file actually exists locally
+  /// (iCloud-backed files picked before they finish downloading otherwise fail
+  /// with an opaque "Could not open PDF"), falls back to a data-based load if
+  /// the URL-based initializer fails, and surfaces a clear, actionable error
+  /// for password-protected statements (common for Irish bank PDF exports)
+  /// instead of the generic PDFKit failure.
+  private static func loadDocument(at url: URL) throws -> PDFDocument {
+    if url.isFileURL && !FileManager.default.fileExists(atPath: url.path) {
+      throw NSError(domain: "PdfTextExtractor", code: 4, userInfo: [
+        NSLocalizedDescriptionKey: "The file could not be found on this device. If it's stored in iCloud, make sure it has fully downloaded and try again."
+      ])
+    }
+
+    var document = PDFDocument(url: url)
+    if document == nil, let data = try? Data(contentsOf: url) {
+      document = PDFDocument(data: data)
+    }
+
+    guard let document else {
+      throw NSError(domain: "PdfTextExtractor", code: 2, userInfo: [NSLocalizedDescriptionKey: "Could not open PDF"])
+    }
+
+    if document.isLocked {
+      // Some statements ship with a blank open-password (owner-password only).
+      _ = document.unlock(withPassword: "")
+    }
+
+    if document.isLocked {
+      throw NSError(domain: "PdfTextExtractor", code: 5, userInfo: [
+        NSLocalizedDescriptionKey: "This PDF is password protected. Please remove the password (many banks use your date of birth or account number) and try importing again."
+      ])
+    }
+
+    return document
   }
 
   // MARK: - File URL Resolution

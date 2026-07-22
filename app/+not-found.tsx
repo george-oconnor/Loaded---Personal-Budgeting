@@ -1,19 +1,22 @@
 import { useSessionStore } from "@/store/useSessionStore";
 import { router, useSegments } from "expo-router";
-import { useEffect } from "react";
+import { useEffect, useRef } from "react";
 import { Text, View } from "react-native";
 
 export default function NotFoundScreen() {
   const segments = useSegments();
   const { status } = useSessionStore();
+  const navigationAttempted = useRef(false);
 
   useEffect(() => {
     // Wait for session status to be determined before attempting navigation
     if (status === "loading" || status === "idle") return;
-    
+    if (navigationAttempted.current) return;
+
     // If the user somehow hits an unknown route, send them to the auth flow by default.
     const inAuth = segments[0] === "auth";
     if (!inAuth) {
+      navigationAttempted.current = true;
       router.replace("/auth");
     }
   }, [segments, status]);

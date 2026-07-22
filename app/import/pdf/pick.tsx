@@ -4,6 +4,7 @@ import { detectTables, TableDetectionResult, DetectedTable } from "@/lib/pdfTabl
 import { processPdfTable } from "@/lib/pdfParser";
 import { ColumnMapping } from "@/lib/csvAIAnalyzer";
 import { ParsedTransaction, SkippedRow } from "@/lib/csvParser";
+import { captureException } from "@/lib/sentry";
 import { Feather } from "@expo/vector-icons";
 import * as DocumentPicker from "expo-document-picker";
 import { router, useLocalSearchParams } from "expo-router";
@@ -269,10 +270,17 @@ export default function PdfPickScreen() {
     } catch (err) {
       console.error("PDF analysis error:", err);
       setAnalysisStatus("error");
-      Alert.alert(
-        "Error",
-        `Failed to analyze the PDF: ${err instanceof Error ? err.message : "Unknown error"}`
-      );
+      const error = err instanceof Error ? err : new Error(String(err));
+      captureException(error, {
+        contexts: { pdf_import: { fileName, uri } },
+        tags: { feature: "pdf_import", event_type: "load_error" },
+      });
+      const message = error.message;
+      if (message.includes("password protected")) {
+        Alert.alert("Password Protected PDF", message);
+      } else {
+        Alert.alert("Error", `Failed to analyze the PDF: ${message}`);
+      }
     } finally {
       setLoading(false);
     }
