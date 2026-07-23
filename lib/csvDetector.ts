@@ -29,12 +29,13 @@ export function detectCSVProvider(csvContent: string): CSVProvider {
   const headerLower = headerLine.toLowerCase();
 
   // AIB Detection:
-  // AIB CSV headers typically include: "Posted Transactions", "Posted Account", "Date", "Description", "Debit", "Credit", "Balance"
-  // Check for distinctive AIB headers
+  // AIB CSV headers are distinctively "Posted Account" / "Posted Transactions Date".
+  // A generic debit/credit/balance check is NOT specific enough on its own — other
+  // banks (e.g. Bank of Ireland's own CSV export: "Date,Details,Debit,Credit,Balance")
+  // use those same generic column names and would be misdetected as AIB.
   if (
     headerLower.includes('posted transactions') ||
-    headerLower.includes('posted account') ||
-    (headerLower.includes('debit') && headerLower.includes('credit') && headerLower.includes('balance'))
+    headerLower.includes('posted account')
   ) {
     return 'aib';
   }
@@ -50,23 +51,17 @@ export function detectCSVProvider(csvContent: string): CSVProvider {
     return 'revolut';
   }
 
-  // If we can't detect from headers, try looking at the second line structure
+  // If we can't detect from headers, fall back to structure — but only for Revolut,
+  // whose 10+ column export is a distinctive shape. A handful of columns with a
+  // DD/MM/YYYY date is not distinctive to AIB — most Irish banks export that shape,
+  // so guessing 'aib' here caused BOI (and likely other banks') CSVs to be misrouted.
+  // Anything not confidently AIB/Revolut goes through the generic AI-assisted importer.
   if (lines.length > 1) {
     const firstDataLine = lines[1];
     const columns = firstDataLine.split(',').map(col => col.trim());
 
-    // AIB typically has 7 columns: Date, Description, Debit, Credit, Balance
-    // Revolut typically has 10+ columns
     if (columns.length >= 10) {
-      // Likely Revolut (more columns)
       return 'revolut';
-    } else if (columns.length >= 4 && columns.length <= 7) {
-      // Could be AIB (fewer columns)
-      // Check if there's a date pattern that looks like AIB (DD/MM/YYYY or DD/MM/YY)
-      const datePattern = /^\d{1,2}\/\d{1,2}\/\d{2,4}$/;
-      if (columns.some(col => datePattern.test(col))) {
-        return 'aib';
-      }
     }
   }
 

@@ -1,7 +1,6 @@
 import { restoreLastBalanceSnapshot } from "@/lib/accountBalances";
 import { clearAllBalanceHistory, deleteBalanceHistoryForBatch } from "@/lib/balanceHistory";
 import { deleteTransactionsByBatchId, getLastImportBatchId } from "@/lib/backend";
-import { loadDemoData, removeDemoData } from "@/lib/demoData";
 import { queueDeleteAll } from "@/lib/deleteQueue";
 import {
     areNotificationsEnabled,
@@ -38,7 +37,6 @@ export default function ProfileScreen() {
   const [undoLoading, setUndoLoading] = useState(false);
   const [clearingHistory, setClearingHistory] = useState(false);
   const [deletingAccount, setDeletingAccount] = useState(false);
-  const [demoLoading, setDemoLoading] = useState(false);
   const [notificationsEnabled, setNotificationsEnabled] = useState(false);
   const [importRecords, setImportRecords] = useState<Array<{ accountName: string; provider: string; daysSince: number }>>([]);
   const initials = user?.name
@@ -121,35 +119,6 @@ export default function ProfileScreen() {
       console.error("Logout failed:", err);
     } finally {
       setLoading(false);
-    }
-  };
-
-  const handleLoadDemo = async () => {
-    if (!user?.id) return;
-    setDemoLoading(true);
-    try {
-      await loadDemoData(user.id);
-      await fetchHome();
-      Alert.alert("Sample data added", "Explore the app with example transactions, budgets and balances.");
-    } catch (err) {
-      console.error("Load sample data failed:", err);
-      Alert.alert("Couldn't add sample data", err instanceof Error ? err.message : "Please try again.");
-    } finally {
-      setDemoLoading(false);
-    }
-  };
-
-  const handleRemoveDemo = async () => {
-    if (!user?.id) return;
-    setDemoLoading(true);
-    try {
-      await removeDemoData(user.id);
-      await fetchHome();
-      Alert.alert("Sample data removed");
-    } catch (err) {
-      console.error("Remove sample data failed:", err);
-    } finally {
-      setDemoLoading(false);
     }
   };
 
@@ -487,26 +456,6 @@ export default function ProfileScreen() {
 
         {/* Action Buttons */}
         <View className="mt-auto mb-4">
-          {/* Sample data (App Review / first-run exploration) */}
-          <Pressable
-            onPress={handleLoadDemo}
-            disabled={demoLoading}
-            className="flex-row items-center justify-center gap-2 bg-blue-50 border border-blue-200 rounded-2xl px-4 py-3 mb-3 active:opacity-70 disabled:opacity-50"
-          >
-            <Feather name="database" size={16} color="#0C8CE9" />
-            <Text className="text-blue-700 font-semibold text-sm">
-              {demoLoading ? "Working..." : "Load Sample Data"}
-            </Text>
-            {demoLoading && <ActivityIndicator color="#0C8CE9" size="small" />}
-          </Pressable>
-          <Pressable
-            onPress={handleRemoveDemo}
-            disabled={demoLoading}
-            className="flex-row items-center justify-center gap-2 bg-gray-50 border border-gray-200 rounded-2xl px-4 py-3 mb-3 active:opacity-70 disabled:opacity-50"
-          >
-            <Feather name="x-circle" size={16} color="#6B7280" />
-            <Text className="text-gray-600 font-semibold text-sm">Remove Sample Data</Text>
-          </Pressable>
           <Pressable
             onPress={handleUndoLastImport}
             disabled={undoLoading}

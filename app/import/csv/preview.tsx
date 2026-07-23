@@ -603,9 +603,9 @@ export default function GenericCSVPreviewScreen() {
               <View className="px-5 py-3 border-b border-gray-100 flex-row items-center justify-between">
                 <View className="flex-1">
                   <View className="flex-row items-center gap-2">
-                    <Text className="font-semibold text-dark-100" numberOfLines={1}>{item.title}</Text>
+                    <Text className="font-semibold text-dark-100 flex-shrink" numberOfLines={1}>{item.title}</Text>
                     {isDuplicate && (
-                      <View className="px-2 py-1 rounded-full bg-red-100">
+                      <View className="px-2 py-1 rounded-full bg-red-100 flex-shrink-0">
                         <Text className="text-[11px] font-semibold text-red-700">Will skip</Text>
                       </View>
                     )}

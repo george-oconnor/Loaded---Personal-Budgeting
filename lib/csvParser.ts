@@ -532,6 +532,11 @@ export function parseAibCSV(csvContent: string): AibParseResult {
 
     try {
       const rawDate = dateIdx >= 0 ? fields[dateIdx]?.trim() || '' : '';
+      if (!rawDate) {
+        skipped++;
+        skippedDetails.push({ line: i + 1, reason: 'Missing date' });
+        continue;
+      }
       const description = descIdx >= 0 ? fields[descIdx]?.trim() || '' : '';
 
       let amount = 0;

@@ -257,9 +257,11 @@ export default function AibImportPasteScreen() {
       // If the most recent date has no balance figures, check whether applying its
       // transactions to the last known balance results in zero (AIB omits the balance
       // column when the closing balance is 0.00).
-      if (finalBalanceCents !== undefined && sortedByDate.length > 0) {
-        const mostRecentDateKey = parseAibDate(sortedByDate[sortedByDate.length - 1].date)
-          .toISOString().split('T')[0];
+      const mostRecentParsedDate = sortedByDate.length > 0
+        ? parseAibDate(sortedByDate[sortedByDate.length - 1].date)
+        : new Date(NaN);
+      if (finalBalanceCents !== undefined && sortedByDate.length > 0 && !isNaN(mostRecentParsedDate.getTime())) {
+        const mostRecentDateKey = mostRecentParsedDate.toISOString().split('T')[0];
 
         const mostRecentTxs = sortedByDate.filter(tx => {
           const d = parseAibDate(tx.date);
