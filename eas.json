@@ -23,19 +23,22 @@
         "EXPO_PUBLIC_APPWRITE_TABLE_SUBSCRIPTIONS": "subscriptions",
         "EXPO_PUBLIC_APPWRITE_TABLE_BALANCE_HISTORY": "balanceHistory",
         "EXPO_PUBLIC_SENTRY_DSN": "https://ce3e3ecd9f6dd369bda57ce39d8dae6e@o4509054949195776.ingest.de.sentry.io/4510562512339024"
-      }
+      },
+      "channel": "_base"
     },
     "preview": {
       "extends": "_base",
       "ios": {
         "simulator": true
-      }
+      },
+      "channel": "preview"
     },
     "preview2": {
       "extends": "_base",
       "android": {
         "gradleCommand": ":app:assembleRelease"
-      }
+      },
+      "channel": "preview2"
     },
     "preview3": {
       "extends": "_base",
@@ -44,7 +47,8 @@
       "env": {
         "EXPO_PUBLIC_BACKEND": "cloudkit",
         "CLOUDKIT_ENV": "Development"
-      }
+      },
+      "channel": "preview3"
     },
     "internal": {
       "extends": "_base",
@@ -55,7 +59,8 @@
       "env": {
         "EXPO_PUBLIC_BACKEND": "cloudkit",
         "CLOUDKIT_ENV": "Production"
-      }
+      },
+      "channel": "internal"
     },
     "production": {
       "extends": "_base",
@@ -65,7 +70,8 @@
       "env": {
         "EXPO_PUBLIC_BACKEND": "cloudkit",
         "CLOUDKIT_ENV": "Production"
-      }
+      },
+      "channel": "production"
     },
     "testflight": {
       "extends": "_base",
@@ -79,20 +85,25 @@
       "env": {
         "EXPO_PUBLIC_BACKEND": "cloudkit",
         "CLOUDKIT_ENV": "Production"
-      }
+      },
+      "channel": "testflight"
     }
   },
   "submit": {
     "production": {
       "ios": {
         "ascAppId": "6756985580",
-        "groups": ["External Testers"]
+        "groups": [
+          "External Testers"
+        ]
       }
     },
     "testflight": {
       "ios": {
         "ascAppId": "6756985580",
-        "groups": ["External Testers"]
+        "groups": [
+          "External Testers"
+        ]
       }
     }
   }
