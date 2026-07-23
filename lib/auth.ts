@@ -21,6 +21,25 @@ const SIWA_USER_KEY = 'siwa_user_id';
 const SIWA_EMAIL_KEY = 'siwa_email';
 const SIWA_NAME_KEY = 'siwa_name';
 
+/**
+ * At cold launch, SecureStore reads can hit iOS's `errSecInteractionNotAllowed`
+ * for a brief window before `UIApplicationProtectedDataDidBecomeAvailable`
+ * fires — even though the device is unlocked. It clears itself within
+ * milliseconds, so retry a couple of times before giving up.
+ */
+async function getItemWithRetry(key: string, attempts = 3, delayMs = 150): Promise<string | null> {
+  for (let attempt = 1; attempt <= attempts; attempt++) {
+    try {
+      return await SecureStore.getItemAsync(key);
+    } catch (err) {
+      const isInteractionError = String(err).includes('User interaction is not allowed');
+      if (!isInteractionError || attempt === attempts) throw err;
+      await new Promise((resolve) => setTimeout(resolve, delayMs));
+    }
+  }
+  return null;
+}
+
 export type AppleIdentity = {
   appleUserId: string;
   email?: string;
@@ -71,10 +90,10 @@ export async function signInWithApple(): Promise<AppleIdentity> {
 }
 
 export async function getStoredIdentity(): Promise<AppleIdentity | null> {
-  const appleUserId = await SecureStore.getItemAsync(SIWA_USER_KEY);
+  const appleUserId = await getItemWithRetry(SIWA_USER_KEY);
   if (!appleUserId) return null;
-  const email = (await SecureStore.getItemAsync(SIWA_EMAIL_KEY)) ?? undefined;
-  const fullName = (await SecureStore.getItemAsync(SIWA_NAME_KEY)) ?? undefined;
+  const email = (await getItemWithRetry(SIWA_EMAIL_KEY)) ?? undefined;
+  const fullName = (await getItemWithRetry(SIWA_NAME_KEY)) ?? undefined;
   return { appleUserId, email, fullName };
 }
 

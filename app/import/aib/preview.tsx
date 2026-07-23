@@ -60,6 +60,10 @@ const earliestDateISO = (txs: { date: string }[]) => {
   const times = txs.map((t) => new Date(t.date).getTime()).filter((t) => !Number.isNaN(t));
   return new Date(times.length ? Math.min(...times) : 0).toISOString();
 };
+const latestDateISO = (txs: { date: string }[], fallback: string) => {
+  const times = txs.map((t) => new Date(t.date).getTime()).filter((t) => !Number.isNaN(t));
+  return times.length ? new Date(Math.max(...times)).toISOString() : fallback;
+};
 
 export default function ImportPreviewScreen() {
   const { user } = useSessionStore();
@@ -541,14 +545,15 @@ export default function ImportPreviewScreen() {
           // Record daily balance history for the chart
           if (user?.id && accountKey) {
             try {
+              const accountTransactions = finalTransactions.map(t => ({ date: t.date, amount: t.amount, kind: t.kind }));
               await recordImportBalanceHistory(user.id, importBatchId, [{
                 accountKey,
                 accountName,
                 provider: "aib",
                 currency,
                 finalBalance,
-                finalBalanceDate: importTime,
-                transactions: finalTransactions.map(t => ({ date: t.date, amount: t.amount, kind: t.kind })),
+                finalBalanceDate: latestDateISO(accountTransactions, importTime),
+                transactions: accountTransactions,
               }]);
             } catch (histErr) {
               console.error('Failed to record balance history (aib):', histErr);
