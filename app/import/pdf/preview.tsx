@@ -9,6 +9,7 @@ import { saveLastImportDate } from "@/lib/notifications";
 import { withSpan } from "@/lib/sentry";
 import { queueTransactionsForSync } from "@/lib/syncQueue";
 import { matchTransactionToSubscription } from "@/lib/subscriptionMatcher";
+import { useHomeStore } from "@/store/useHomeStore";
 import { useSessionStore } from "@/store/useSessionStore";
 import { Feather } from "@expo/vector-icons";
 import { ID } from "@/lib/ids";
@@ -62,6 +63,7 @@ const earliestDateISO = (txs: { date: string }[]) => {
 
 export default function PdfPreviewScreen() {
   const { user } = useSessionStore();
+  const { fetchHome } = useHomeStore();
   const params = useLocalSearchParams();
 
   // Get account info from params (passed from select-account screen)
@@ -457,6 +459,7 @@ export default function PdfPreviewScreen() {
             text: "View Home",
             onPress: () => {
               clearParsedPdfTransactions();
+              fetchHome();
               router.replace("/");
             },
           },

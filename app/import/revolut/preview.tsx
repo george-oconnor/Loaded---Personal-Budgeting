@@ -8,6 +8,7 @@ import { saveLastImportDate } from "@/lib/notifications";
 import { withSpan } from "@/lib/sentry";
 import { queueTransactionsForSync } from "@/lib/syncQueue";
 import { matchTransactionToSubscription } from "@/lib/subscriptionMatcher";
+import { useHomeStore } from "@/store/useHomeStore";
 import { useSessionStore } from "@/store/useSessionStore";
 import { Feather } from "@expo/vector-icons";
 import { ID } from "@/lib/ids";
@@ -66,6 +67,7 @@ const earliestDateISO = (txs: { date: string }[]) => {
 
 export default function ImportPreviewScreen() {
   const { user } = useSessionStore();
+  const { fetchHome } = useHomeStore();
   const [loading, setLoading] = useState(false);
   const [transactions, setTransactions] = useState<Transaction[]>([]);
   const [importProgress, setImportProgress] = useState({ current: 0, total: 0 });
@@ -436,6 +438,7 @@ export default function ImportPreviewScreen() {
             text: "View Home",
             onPress: () => {
               clearParsedTransactions();
+              fetchHome();
               router.replace("/");
             },
           },
