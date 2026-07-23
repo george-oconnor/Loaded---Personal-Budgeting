@@ -23,8 +23,7 @@
         "EXPO_PUBLIC_APPWRITE_TABLE_SUBSCRIPTIONS": "subscriptions",
         "EXPO_PUBLIC_APPWRITE_TABLE_BALANCE_HISTORY": "balanceHistory",
         "EXPO_PUBLIC_SENTRY_DSN": "https://ce3e3ecd9f6dd369bda57ce39d8dae6e@o4509054949195776.ingest.de.sentry.io/4510562512339024"
-      },
-      "channel": "_base"
+      }
     },
     "preview": {
       "extends": "_base",
