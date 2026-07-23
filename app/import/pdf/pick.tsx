@@ -4,7 +4,7 @@ import { detectTables, TableDetectionResult, DetectedTable } from "@/lib/pdfTabl
 import { processPdfTable } from "@/lib/pdfParser";
 import { ColumnMapping } from "@/lib/csvAIAnalyzer";
 import { ParsedTransaction, SkippedRow } from "@/lib/csvParser";
-import { captureException } from "@/lib/sentry";
+import { captureException, captureMessage } from "@/lib/sentry";
 import { Feather } from "@expo/vector-icons";
 import * as DocumentPicker from "expo-document-picker";
 import { router, useLocalSearchParams } from "expo-router";
@@ -222,6 +222,11 @@ export default function PdfPickScreen() {
 
       if (!tables.success || !tables.mergedTable) {
         setAnalysisStatus("error");
+        captureMessage("PDF import: no transaction table found", {
+          level: "warning",
+          contexts: { pdf_import: { fileName, error: tables.error, rawLineCount: tables.rawLineCount } },
+          tags: { feature: "pdf_import", event_type: "no_table_found" },
+        });
         Alert.alert(
           "No Table Found",
           tables.error ||
@@ -256,6 +261,18 @@ export default function PdfPickScreen() {
 
       if (!analysis.isValidForImport || !analysis.mapping) {
         setAnalysisStatus("error");
+        captureMessage("PDF import: could not identify required columns", {
+          level: "warning",
+          contexts: {
+            pdf_import: {
+              fileName,
+              missingFields: analysis.missingFields,
+              confidence: analysis.confidence,
+              detectedColumns: tables.mergedTable?.columns.map((c) => ({ name: c.name, type: c.inferredType })),
+            },
+          },
+          tags: { feature: "pdf_import", event_type: "column_mapping_failed" },
+        });
         Alert.alert(
           "Cannot Import",
           analysis.suggestion ||

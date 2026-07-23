@@ -201,6 +201,29 @@ export function detectTables(extractedText: string): TableDetectionResult {
   // Step 3: Merge multi-page tables (same column structure = same table)
   const mergedTable = mergeTables(tables);
 
+  // Strategy B can latch onto a non-transaction grid that happens to look
+  // columnar (e.g. a rates/fees comparison table) when the real transaction
+  // list is too short (< 3 rows) to win Strategy A outright above. A table
+  // with no date column at all is never a valid transaction table, so if
+  // Strategy A found any real transaction lines, prefer it.
+  if (
+    lineFormatResult &&
+    lineFormatResult.dataRows.length > 0 &&
+    mergedTable &&
+    !mergedTable.columns.some(c => c.inferredType === 'date')
+  ) {
+    console.log(
+      'PDF table detector: Strategy B table has no date column, preferring simple line format with',
+      lineFormatResult.dataRows.length, 'rows'
+    );
+    return {
+      success: true,
+      tables: [lineFormatResult],
+      mergedTable: lineFormatResult,
+      rawLineCount: lines.length,
+    };
+  }
+
   return {
     success: true,
     tables,
