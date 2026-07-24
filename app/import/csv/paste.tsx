@@ -1,6 +1,6 @@
 import { analyzeCSVWithAI, ColumnMapping, CSVAnalysisResult } from "@/lib/csvAIAnalyzer";
 import { ParsedTransaction, SkippedRow } from "@/lib/csvParser";
-import { processGenericCSV } from "@/lib/genericCsvParser";
+import { parseCSVLine, processGenericCSV } from "@/lib/genericCsvParser";
 import { Feather } from "@expo/vector-icons";
 import * as Clipboard from "expo-clipboard";
 import * as DocumentPicker from "expo-document-picker";
@@ -38,6 +38,41 @@ export function clearParsedTransactions() {
 
 type AnalysisStatus = 'idle' | 'reading' | 'anonymizing' | 'analyzing' | 'parsing' | 'done' | 'error';
 
+// A dateFormat containing "or" (e.g. "DD/MM/YYYY or MM/DD/YYYY") means the
+// analyzer genuinely couldn't rule either interpretation out from the sampled
+// data — ask the user rather than silently guessing.
+function isAmbiguousDateFormat(format: string | undefined | null): boolean {
+  return !!format && /\bor\b/i.test(format);
+}
+
+const MONTH_NAMES = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
+
+function formatDateInterpretation(raw: string, order: 'DM' | 'MD'): string {
+  const parts = raw.split('/').map(n => parseInt(n, 10));
+  if (parts.length !== 3 || parts.some(isNaN)) return 'Invalid';
+  const [first, second, year] = parts;
+  const day = order === 'DM' ? first : second;
+  const month = order === 'DM' ? second : first;
+  if (month < 1 || month > 12 || day < 1 || day > 31) return 'Invalid';
+  return `${day} ${MONTH_NAMES[month - 1]} ${year}`;
+}
+
+// Pull a few real, distinct sample values from the CSV's date column so the
+// user can see exactly what they're choosing between. Stays on-device.
+function extractDateColumnSamples(csvContent: string, dateColumn: number, max = 3): string[] {
+  if (dateColumn < 0) return [];
+  const lines = csvContent.split('\n').map(l => l.replace(/\r$/, '')).filter(l => l.trim());
+  const samples: string[] = [];
+  for (let i = 1; i < lines.length && samples.length < max; i++) {
+    const fields = parseCSVLine(lines[i]);
+    const v = fields[dateColumn]?.trim();
+    if (v && /^\d{1,2}\/\d{1,2}\/\d{4}$/.test(v) && !samples.includes(v)) {
+      samples.push(v);
+    }
+  }
+  return samples;
+}
+
 export default function GenericCSVPasteScreen() {
   const { csvContent: sharedCsvContent } = useLocalSearchParams<{ csvContent?: string }>();
   const [csvContent, setCSVContent] = useState("");
@@ -46,6 +81,15 @@ export default function GenericCSVPasteScreen() {
   const [analysisResult, setAnalysisResult] = useState<CSVAnalysisResult | null>(null);
   const [columnMapping, setColumnMapping] = useState<ColumnMapping | null>(null);
   const [hasAutoAnalyzed, setHasAutoAnalyzed] = useState(false);
+  const [dateFormatChoice, setDateFormatChoice] = useState<'DD/MM/YYYY' | 'MM/DD/YYYY' | null>(null);
+
+  const needsDateFormatChoice = !!columnMapping && isAmbiguousDateFormat(columnMapping.dateFormat) && !dateFormatChoice;
+
+  const handlePickDateFormat = (format: 'DD/MM/YYYY' | 'MM/DD/YYYY') => {
+    if (!columnMapping) return;
+    setColumnMapping({ ...columnMapping, dateFormat: format });
+    setDateFormatChoice(format);
+  };
 
   // Handle shared CSV content from other apps
   useEffect(() => {
@@ -65,7 +109,8 @@ export default function GenericCSVPasteScreen() {
     setAnalysisStatus('anonymizing');
     setAnalysisResult(null);
     setColumnMapping(null);
-    
+    setDateFormatChoice(null);
+
     try {
       setAnalysisStatus('analyzing');
       const result = await analyzeCSVWithAI(content);
@@ -78,8 +123,16 @@ export default function GenericCSVPasteScreen() {
       }
       
       setColumnMapping(result.mapping);
+
+      if (isAmbiguousDateFormat(result.mapping.dateFormat)) {
+        // Let the user resolve DD/MM vs MM/DD before parsing anything —
+        // guessing here is what caused wrong balances/dates in the past.
+        setAnalysisStatus('done');
+        return;
+      }
+
       setAnalysisStatus('parsing');
-      
+
       const parseResult = await processGenericCSV(content, result.mapping);
       
       if (parseResult.transactions.length === 0) {
@@ -116,6 +169,7 @@ export default function GenericCSVPasteScreen() {
       setCSVContent(content);
       setAnalysisResult(null);
       setColumnMapping(null);
+      setDateFormatChoice(null);
       Alert.alert("Success", `Pasted ${content.split("\n").length} lines from clipboard`);
     } catch (err) {
       Alert.alert("Error", "Failed to paste from clipboard");
@@ -168,6 +222,7 @@ export default function GenericCSVPasteScreen() {
       setCSVContent(content);
       setAnalysisResult(null);
       setColumnMapping(null);
+      setDateFormatChoice(null);
       Alert.alert("Success", `Loaded file with ${content.split("\n").length} lines`);
     } catch (err) {
       console.error("File read error:", err);
@@ -382,6 +437,7 @@ export default function GenericCSVPasteScreen() {
                 setCSVContent("");
                 setAnalysisResult(null);
                 setColumnMapping(null);
+                setDateFormatChoice(null);
               }}
               className="mt-2 self-end"
             >
@@ -457,10 +513,45 @@ export default function GenericCSVPasteScreen() {
               </View>
             )}
 
-            {/* Warnings */}
-            {analysisResult.warnings.length > 0 && (
+            {/* Date Format Picker (only when genuinely ambiguous) */}
+            {needsDateFormatChoice && columnMapping && (
+              <View className="mb-3 p-3 bg-amber-50 rounded-xl border border-amber-200">
+                <Text className="text-sm font-bold text-amber-900 mb-1">Which date format is this?</Text>
+                <Text className="text-xs text-amber-800 mb-3">
+                  Every date in this file could be read either way. Pick the one that matches your bank.
+                </Text>
+                <View className="mb-3">
+                  {extractDateColumnSamples(csvContent, columnMapping.dateColumn).map((raw, index) => (
+                    <View key={index} className="bg-white rounded-lg px-3 py-2 border border-amber-100 mb-2">
+                      <Text className="text-xs font-mono text-gray-500 mb-1">{raw}</Text>
+                      <View className="flex-row justify-between">
+                        <Text className="text-xs text-gray-700">Day first: {formatDateInterpretation(raw, 'DM')}</Text>
+                        <Text className="text-xs text-gray-700">Month first: {formatDateInterpretation(raw, 'MD')}</Text>
+                      </View>
+                    </View>
+                  ))}
+                </View>
+                <View className="flex-row gap-2">
+                  <Pressable
+                    onPress={() => handlePickDateFormat('DD/MM/YYYY')}
+                    className="flex-1 py-3 rounded-xl bg-amber-500 items-center active:opacity-80"
+                  >
+                    <Text className="text-white font-bold text-sm">Day first (DD/MM)</Text>
+                  </Pressable>
+                  <Pressable
+                    onPress={() => handlePickDateFormat('MM/DD/YYYY')}
+                    className="flex-1 py-3 rounded-xl bg-white border border-amber-300 items-center active:opacity-80"
+                  >
+                    <Text className="text-amber-700 font-bold text-sm">Month first (MM/DD)</Text>
+                  </Pressable>
+                </View>
+              </View>
+            )}
+
+            {/* Warnings (the ambiguous-date-format one is handled by the picker above instead) */}
+            {analysisResult.warnings.filter(w => !/ambiguous/i.test(w)).length > 0 && (
               <View className="mb-2">
-                {analysisResult.warnings.map((warning, index) => (
+                {analysisResult.warnings.filter(w => !/ambiguous/i.test(w)).map((warning, index) => (
                   <View key={index} className="flex-row items-start gap-2">
                     <Feather name="alert-triangle" size={14} color="#F59E0B" />
                     <Text className="text-xs text-yellow-700 flex-1">{warning}</Text>
@@ -537,11 +628,16 @@ export default function GenericCSVPasteScreen() {
           </Pressable>
         ) : (
           <View className="gap-3">
+            {needsDateFormatChoice && (
+              <Text className="text-xs text-amber-700 text-center">
+                Choose a date format above to continue
+              </Text>
+            )}
             <Pressable
               onPress={handleContinue}
-              disabled={loading}
+              disabled={loading || needsDateFormatChoice}
               className={`w-full py-4 rounded-2xl items-center ${
-                loading ? 'bg-gray-300' : 'bg-emerald-500 active:opacity-80'
+                loading || needsDateFormatChoice ? 'bg-gray-300' : 'bg-emerald-500 active:opacity-80'
               }`}
             >
               {loading ? (
@@ -557,6 +653,7 @@ export default function GenericCSVPasteScreen() {
               onPress={() => {
                 setAnalysisResult(null);
                 setColumnMapping(null);
+                setDateFormatChoice(null);
               }}
               className="w-full py-3 items-center"
             >

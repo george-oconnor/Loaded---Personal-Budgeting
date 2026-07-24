@@ -112,17 +112,39 @@ function detectColumnType(values: string[]): ColumnFormat['inferredType'] {
  */
 function detectDateFormat(values: string[]): string | undefined {
   const nonEmptyValues = values.filter(v => v && v.trim().length > 0);
-  
+
   for (const value of nonEmptyValues) {
     const v = value.trim();
     if (/^\d{4}-\d{2}-\d{2}T/.test(v)) return 'ISO_DATETIME';
     if (/^\d{4}-\d{2}-\d{2}\s+\d{2}:\d{2}/.test(v)) return 'YYYY-MM-DD HH:mm:ss';
     if (/^\d{4}-\d{2}-\d{2}$/.test(v)) return 'YYYY-MM-DD';
-    if (/^\d{2}\/\d{2}\/\d{4}$/.test(v)) return 'DD/MM/YYYY or MM/DD/YYYY';
-    if (/^\d{2}\/\d{2}\/\d{2}$/.test(v)) return 'DD/MM/YY';
     if (/^\d{1,2}\s+\w+\s+\d{4}$/.test(v)) return 'D Mon YYYY';
   }
-  
+
+  // DD/MM/YYYY vs MM/DD/YYYY is ambiguous on any single sample, but scanning
+  // every sample can rule one interpretation out: if any row's first segment
+  // exceeds 12 it can only be a day (proving DD/MM), and likewise a second
+  // segment over 12 can only be a day (proving MM/DD). Only report ambiguity
+  // when no sample rules either interpretation out — a single-value check
+  // previously mislabeled clearly-DD/MM data (e.g. "22/07/2026") as ambiguous,
+  // which then forced the AI mapper to guess blind since it only ever sees
+  // anonymized/synthetic values, not the real disambiguating evidence.
+  const fourDigitYearSlash = nonEmptyValues.filter(v => /^\d{1,2}\/\d{1,2}\/\d{4}$/.test(v.trim()));
+  if (fourDigitYearSlash.length > 0) {
+    let sawFirstOver12 = false;
+    let sawSecondOver12 = false;
+    for (const v of fourDigitYearSlash) {
+      const [first, second] = v.trim().split('/').map(n => parseInt(n, 10));
+      if (first > 12) sawFirstOver12 = true;
+      if (second > 12) sawSecondOver12 = true;
+    }
+    if (sawFirstOver12 && !sawSecondOver12) return 'DD/MM/YYYY';
+    if (sawSecondOver12 && !sawFirstOver12) return 'MM/DD/YYYY';
+    return 'DD/MM/YYYY or MM/DD/YYYY';
+  }
+
+  if (nonEmptyValues.some(v => /^\d{2}\/\d{2}\/\d{2}$/.test(v.trim()))) return 'DD/MM/YY';
+
   return undefined;
 }
 

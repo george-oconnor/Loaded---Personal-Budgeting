@@ -31,7 +31,7 @@ export interface GenericParseResult {
 /**
  * Parse a CSV line handling quoted fields
  */
-function parseCSVLine(line: string): string[] {
+export function parseCSVLine(line: string): string[] {
   const result: string[] = [];
   let current = '';
   let insideQuotes = false;
@@ -82,13 +82,17 @@ function parseDate(dateStr: string, format: string): Date | null {
     const day = parseInt(parts[0], 10);
     const month = parseInt(parts[1], 10) - 1;
     const year = parseInt(parts[2], 10);
-    
-    // If format hint suggests MM/DD/YYYY
-    if (format.toUpperCase().startsWith('MM')) {
+
+    // If format hint suggests MM/DD/YYYY, honor it — but only when this
+    // specific value doesn't contradict it. A first segment over 12 can only
+    // be a day (e.g. "22/07/2026"), so no format hint can make it a month;
+    // swapping anyway would silently scramble the date. This guards against
+    // a bad AI guess when the format was ambiguous at analysis time.
+    if (format.toUpperCase().startsWith('MM') && day <= 12) {
       const d = new Date(year, day - 1, month + 1); // Swap day and month
       if (!isNaN(d.getTime())) return d;
     }
-    
+
     const d = new Date(year, month, day);
     if (!isNaN(d.getTime())) return d;
   }
