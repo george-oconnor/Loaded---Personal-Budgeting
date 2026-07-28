@@ -1,0 +1,94 @@
+{
+  "configVersion": 0,
+  "apple": {
+    "version": "2.0.0",
+    "copyright": "2026 George O'Connor",
+    "release": {
+      "automaticRelease": true
+    },
+    "info": {
+      "en-GB": {
+        "description": "Take control of your finances with Loaded - The Personal Budgeting App - the smart, intuitive way to manage your money.\n\nNow powered by iCloud, so your budgets stay private and sync automatically across every device you own.\n\nKEY FEATURES:\n\nPrivate iCloud Sync\nSign in with Apple - no passwords to create or remember\nYour data lives in your own private iCloud, never on our servers\nAutomatic sync across all your devices\nAlready have an account? Bring your existing budgets and transactions across in a few taps\n\nSmart Budget Management\nSet monthly budgets and track spending in real-time\nVisual insights into your spending patterns\nGet alerts when approaching budget limits\n\nComprehensive Analytics\nInteractive spending charts and graphs\nCategory-based expense tracking\nIncome vs. expense comparisons\nSpending trends over time\n\nMulti-Account Support\nTrack multiple bank accounts and balances\nImport statements from Revolut, AIB, Bank of Ireland, or any CSV/PDF\nAutomatic transaction categorization\n\nSmart Categorization\nAI-powered merchant recognition\nCustom category creation\nBulk transaction editing\nQuick filters and search\n\nSecure & Private\nNo ads, no tracking\nYour financial data stays yours\n\nBeautiful & Intuitive:\nClean, modern interface\nDark mode support\nCustomizable spending categories\nEasy-to-use transaction entry\n\nWhether you're saving for a goal, trying to cut expenses, or just want to understand where your money goes, Loaded gives you the insights you need to make smarter financial decisions.\n\nPerfect for:\nPersonal finance management\nBudget planning\nExpense tracking\nFinancial goal setting\nMoney saving\n\nDownload Loaded - The Personal Budgeting App today and start your journey to financial freedom!",
+        "keywords": [
+          "budget",
+          "expense",
+          "finance",
+          "money",
+          "tracker",
+          "spending",
+          "savings",
+          "income",
+          "bills",
+          "icloud",
+          "personal finance"
+        ],
+        "releaseNotes": "Loaded now runs on iCloud, so your data is private to you and syncs automatically across your devices.\n\n- Sign in with Apple - no more usernames or passwords\n- Existing user? Bring your budgets and transactions across from your old account in a few taps\n- New Bank of Ireland statement import, alongside Revolut, AIB and CSV\n- More accurate PDF and CSV import, including smarter date-format detection\n- A friendlier first-run setup, with sample data to explore before you connect your own\n- General performance and stability improvements",
+        "supportUrl": "https://george-oconnor.github.io/Loaded---Personal-Budgeting/support.html",
+        "title": "Loaded - Personal Budgeting",
+        "subtitle": "Smart Personal Finance Manager",
+        "privacyPolicyUrl": "https://george-oconnor.github.io/Loaded---Personal-Budgeting/privacy.html",
+        "screenshots": {
+          "APP_IPAD_PRO_3GEN_129": [
+            "store/apple/screenshot/en-GB/APP_IPAD_PRO_3GEN_129/Simulator Screenshot - iPad Pro 13-inch (M5) - 2026-01-05 at 21.50.22.png",
+            "store/apple/screenshot/en-GB/APP_IPAD_PRO_3GEN_129/Simulator Screenshot - iPad Pro 13-inch (M5) - 2026-01-05 at 21.51.05.png",
+            "store/apple/screenshot/en-GB/APP_IPAD_PRO_3GEN_129/Simulator Screenshot - iPad Pro 13-inch (M5) - 2026-01-05 at 21.51.20.png",
+            "store/apple/screenshot/en-GB/APP_IPAD_PRO_3GEN_129/Simulator Screenshot - iPad Pro 13-inch (M5) - 2026-01-05 at 21.51.50.png",
+            "store/apple/screenshot/en-GB/APP_IPAD_PRO_3GEN_129/Simulator Screenshot - iPad Pro 13-inch (M5) - 2026-01-05 at 21.52.10.png",
+            "store/apple/screenshot/en-GB/APP_IPAD_PRO_3GEN_129/Simulator Screenshot - iPad Pro 13-inch (M5) - 2026-01-05 at 21.52.28.png"
+          ],
+          "APP_IPHONE_67": [
+            "store/apple/screenshot/en-GB/APP_IPHONE_67/Simulator Screenshot - iPhone 17 Pro Max - 2026-01-05 at 22.29.21.png",
+            "store/apple/screenshot/en-GB/APP_IPHONE_67/Simulator Screenshot - iPhone 17 Pro Max - 2026-01-05 at 22.30.47.png",
+            "store/apple/screenshot/en-GB/APP_IPHONE_67/Simulator Screenshot - iPhone 17 Pro Max - 2026-01-05 at 22.30.53.png",
+            "store/apple/screenshot/en-GB/APP_IPHONE_67/Simulator Screenshot - iPhone 17 Pro Max - 2026-01-05 at 22.31.08.png",
+            "store/apple/screenshot/en-GB/APP_IPHONE_67/Simulator Screenshot - iPhone 17 Pro Max - 2026-01-05 at 22.31.15.png",
+            "store/apple/screenshot/en-GB/APP_IPHONE_67/Simulator Screenshot - iPhone 17 Pro Max - 2026-01-05 at 22.31.21.png"
+          ]
+        }
+      }
+    },
+    "categories": [
+      "FINANCE",
+      "PRODUCTIVITY"
+    ],
+    "advisory": {
+      "ageRatingOverride": "NONE",
+      "alcoholTobaccoOrDrugUseOrReferences": "NONE",
+      "contests": "NONE",
+      "gambling": false,
+      "gamblingSimulated": "NONE",
+      "horrorOrFearThemes": "NONE",
+      "kidsAgeBand": null,
+      "koreaAgeRatingOverride": "NONE",
+      "lootBox": false,
+      "matureOrSuggestiveThemes": "NONE",
+      "medicalOrTreatmentInformation": "NONE",
+      "profanityOrCrudeHumor": "NONE",
+      "sexualContentGraphicAndNudity": "NONE",
+      "sexualContentOrNudity": "NONE",
+      "unrestrictedWebAccess": false,
+      "violenceCartoonOrFantasy": "NONE",
+      "violenceRealistic": "NONE",
+      "violenceRealisticProlongedGraphicOrSadistic": "NONE",
+      "advertising": false,
+      "ageAssurance": false,
+      "ageRatingOverrideV2": "NONE",
+      "developerAgeRatingInfoUrl": null,
+      "gunsOrOtherWeapons": "NONE",
+      "healthOrWellnessTopics": false,
+      "messagingAndChat": false,
+      "parentalControls": false,
+      "userGeneratedContent": false
+    },
+    "review": {
+      "firstName": "George",
+      "lastName": "O'Connor",
+      "email": "george@georgeoc.com",
+      "phone": "+353861426123",
+      "demoUsername": "",
+      "demoPassword": "",
+      "demoRequired": false,
+      "notes": "HOW TO SIGN IN\nThis app uses \"Sign in with Apple\" as its only sign-in method for new users - please sign in with any Apple ID.\n\nICLOUD IS REQUIRED\nAll user data is stored privately in the user's own iCloud (CloudKit), not on our servers. Before signing in, please make sure the device is signed into iCloud (Settings -> [your name] -> iCloud). If iCloud is not available, the app shows a screen asking you to sign in to iCloud - this is expected.\n\nSEEING A POPULATED APP (IMPORTANT)\nBecause data lives in each user's private iCloud, a brand-new sign-in starts empty. To review the app with realistic data:\n1. Complete the short onboarding (you can tap \"Skip intro\", choose \"No, I'm new here\", enter any name, and set any budget).\n2. Go to the Profile tab (top-right avatar) -> tap \"Load Sample Data\".\nThis populates example transactions, budgets, and account balances so you can review all features. \"Remove Sample Data\" clears it again.\n\nACCOUNT DELETION\nAccount deletion is available in Profile -> \"Delete Account\". It permanently removes all of the user's data from iCloud.\n\nWHAT THE APP DOES\nLoaded is a personal budgeting app: track spending, set monthly budgets by category, view analytics, and import transactions from bank statements (Revolut, AIB, Bank of Ireland, or CSV/PDF). It is ad-free and does not track users. No payment processing is involved."
+    }
+  }
+}
