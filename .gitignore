@@ -5,6 +5,7 @@
 _References
 package-lock.json
 .vscode/
+builds/
 
 # dependencies
 node_modules/
