@@ -11,7 +11,7 @@ import { useFonts } from "expo-font";
 import * as Linking from 'expo-linking';
 import { SplashScreen, Stack, useRouter, useSegments } from "expo-router";
 import { useEffect, useRef } from "react";
-import { Alert, Text, View } from "react-native";
+import { Alert, AppState, Text, View } from "react-native";
 import { GestureHandlerRootView } from "react-native-gesture-handler";
 import './globals.css';
 
@@ -366,10 +366,27 @@ export default function RootLayout() {
 
   useEffect(() => {
     if (error) throw error;
-    if (fontsLoaded) {
-      SplashScreen.hideAsync();
+    if (!fontsLoaded) return;
+
+    SplashScreen.hideAsync();
+
+    // iOS boots this same RN app (this effect included) for background
+    // launches too — e.g. the periodic background-fetch task — often with
+    // the device still locked. SecureStore reads fail with "User
+    // interaction is not allowed" in that state and no amount of retrying
+    // fixes it, so defer the session check until the app is genuinely
+    // foregrounded instead of racing the lock screen.
+    if (AppState.currentState === 'active') {
       checkSession();
+      return;
     }
+    const subscription = AppState.addEventListener('change', (next) => {
+      if (next === 'active') {
+        subscription.remove();
+        checkSession();
+      }
+    });
+    return () => subscription.remove();
   }, [fontsLoaded, error]);
 
   useEffect(() => {
