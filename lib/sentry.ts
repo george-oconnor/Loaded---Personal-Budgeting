@@ -1,7 +1,16 @@
+import AsyncStorage from "@react-native-async-storage/async-storage";
 import * as Sentry from "@sentry/react-native";
 import * as Application from "expo-application";
 
 const dsn = process.env.EXPO_PUBLIC_SENTRY_DSN;
+
+// Last-known identity, cached in plain AsyncStorage (not SecureStore) so it's
+// readable even when the Keychain is locked. checkSession() only runs once
+// _layout.tsx's RootLayout mounts and the app is foregrounded, so a headless
+// background-task launch (or a crash during a locked-device cold start)
+// would otherwise never call setUser() at all and Sentry would only ever see
+// an anonymous installation id for those events.
+const CACHED_USER_KEY = "sentry_cached_user";
 
 export function initSentry() {
   if (!dsn) {
@@ -32,6 +41,22 @@ export function initSentry() {
   });
 
   console.log("✅ Sentry initialized", { release, dist: buildNumber });
+
+  restoreCachedUser();
+}
+
+// Applies the last-known user identity as soon as Sentry is initialized,
+// ahead of (and independent of) the real checkSession() flow. Runs in every
+// JS process, including headless background-task launches.
+async function restoreCachedUser() {
+  try {
+    const raw = await AsyncStorage.getItem(CACHED_USER_KEY);
+    if (raw) {
+      Sentry.setUser(JSON.parse(raw));
+    }
+  } catch {
+    // Best-effort only — a miss just means events fall back to the anonymous id.
+  }
 }
 
 // Helper to capture exceptions manually
@@ -80,11 +105,13 @@ export function captureMessage(
 // Helper to set user context
 export function setUser(user: { id: string; email?: string; username?: string }) {
   Sentry.setUser(user);
+  AsyncStorage.setItem(CACHED_USER_KEY, JSON.stringify(user)).catch(() => {});
 }
 
 // Helper to clear user context
 export function clearUser() {
   Sentry.setUser(null);
+  AsyncStorage.removeItem(CACHED_USER_KEY).catch(() => {});
 }
 
 // Helper to time an operation as a Sentry performance span (visible in the
