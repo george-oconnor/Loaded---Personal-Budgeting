@@ -207,7 +207,7 @@ export default function TransactionListItem({
           }}
         >
           {transaction.kind === "income" ? "+" : "-"}
-          {formatCurrency(transaction.amount / 100, currency)}
+          {formatCurrency(transaction.amount / 100, transaction.currency || currency)}
         </Text>
       </View>
     </Pressable>

@@ -89,7 +89,7 @@ export default function TransactionDetailScreen() {
   const [tldIndex, setTldIndex] = useState(0);
   const [iconFailed, setIconFailed] = useState(false);
   const [refreshing, setRefreshing] = useState(false);
-  const currency = summary?.currency ?? "USD";
+  const currency = transaction?.currency || summary?.currency || "USD";
 
   // Fetch transaction details
   useEffect(() => {
@@ -121,6 +121,7 @@ export default function TransactionDetailScreen() {
           title: response.title,
           subtitle: response.subtitle,
           amount: response.amount,
+          currency: (response as any).currency,
           categoryId: response.categoryId,
           kind: response.kind,
           date: response.date,

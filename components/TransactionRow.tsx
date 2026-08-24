@@ -163,7 +163,7 @@ export default function TransactionRow({
             textDecorationLine: transaction.excludeFromAnalytics ? "line-through" : "none",
           }}
         >
-          {formatCurrency(transaction.amount / 100, currency)}
+          {formatCurrency(transaction.amount / 100, transaction.currency || currency)}
         </Text>
         <Text className="text-xs text-gray-500">
           {new Date(transaction.date).toLocaleDateString()}
