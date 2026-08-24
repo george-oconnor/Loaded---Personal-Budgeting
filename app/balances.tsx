@@ -260,6 +260,10 @@ export default function BalancesScreen() {
 
   const totalBalance = balances.reduce((sum, a) => sum + toDisplayCurrency(a.balance, a.currency), 0);
 
+  // Keep the "Balance over time" chart limited to accounts that still exist today,
+  // so deleted/renamed accounts don't keep contributing to historical totals.
+  const activeAccountKeys = balances.map(b => b.accountKey).filter((k): k is string => Boolean(k));
+
   // Only show categories with accounts
   const activeCategories = CATEGORIES.filter(c => grouped[c.key].length > 0);
 
@@ -368,7 +372,7 @@ export default function BalancesScreen() {
           </View>
 
           {/* Balance over time */}
-          <BalanceHistoryChart />
+          <BalanceHistoryChart accountKeys={activeAccountKeys.length > 0 ? activeAccountKeys : undefined} />
 
           {/* Category Sections */}
           <View className="px-4 pt-4">

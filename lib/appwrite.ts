@@ -671,6 +671,38 @@ export async function deleteBalanceHistoryByBatch(
   return deleted;
 }
 
+export async function deleteBalanceHistoryByAccountKey(
+  userId: string,
+  accountKey: string
+): Promise<number> {
+  if (!databaseId || !balanceHistoryTableId) return 0;
+
+  let deleted = 0;
+  try {
+    while (true) {
+      const res = await databases.listDocuments(databaseId, balanceHistoryTableId, [
+        Query.equal("userId", userId),
+        Query.equal("accountKey", accountKey),
+        Query.limit(100),
+      ]);
+      if (res.documents.length === 0) break;
+      for (const doc of res.documents) {
+        try {
+          await databases.deleteDocument(databaseId, balanceHistoryTableId, doc.$id);
+          deleted++;
+        } catch (err) {
+          console.error("deleteBalanceHistoryByAccountKey entry failed", err);
+        }
+      }
+      if (res.documents.length < 100) break;
+    }
+  } catch (err) {
+    console.error("deleteBalanceHistoryByAccountKey error", err);
+    captureException(err);
+  }
+  return deleted;
+}
+
 export async function deleteAllBalanceHistory(userId: string): Promise<number> {
   if (!databaseId || !balanceHistoryTableId) return 0;
 

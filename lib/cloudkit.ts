@@ -682,6 +682,22 @@ export async function deleteBalanceHistoryByBatch(userId: string, importBatchId:
   }
 }
 
+export async function deleteBalanceHistoryByAccountKey(userId: string, accountKey: string): Promise<number> {
+  if (!isCloudKitAvailable()) return 0;
+  try {
+    const docs = await queryAll('BalanceHistory', BALANCE_HISTORY_FIELDS, {
+      filters: [{ field: 'accountKey', op: 'eq', value: filterValue('string', accountKey) }],
+      desiredKeys: [],
+    });
+    const result = await deletePrivate(docs.map((d) => d.$id), 'deleteBalanceHistoryByAccountKey');
+    return result.saved.length;
+  } catch (err) {
+    console.error('deleteBalanceHistoryByAccountKey error', err);
+    captureException(asError(err));
+    return 0;
+  }
+}
+
 export async function deleteAllBalanceHistory(userId: string): Promise<number> {
   if (!isCloudKitAvailable()) return 0;
   try {

@@ -1,6 +1,7 @@
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import {
   countBalanceHistory,
+  deleteBalanceHistoryByAccountKey,
   deleteBalanceHistoryByBatch,
   deleteBalanceHistoryPage,
   getBalanceHistory as getBalanceHistoryRemote,
@@ -502,6 +503,46 @@ export async function deleteBalanceHistoryForBatch(
       await deleteBalanceHistoryByBatch(userId, importBatchId);
     } catch (err) {
       console.error('deleteBalanceHistoryForBatch remote failed', err);
+    }
+  }
+}
+
+/**
+ * Purge all balance history for one account (called when the account itself
+ * is removed or renamed), so it stops being carried forward into chart totals
+ * after it no longer exists in the live balances list.
+ */
+export async function deleteBalanceHistoryForAccount(
+  userId: string,
+  accountKey: string
+): Promise<void> {
+  // Local cache: drop matching entries
+  try {
+    const existing = await readLocalCache(userId);
+    const filtered = existing.filter((e) => e.accountKey !== accountKey);
+    if (filtered.length !== existing.length) {
+      await writeLocalCache(userId, filtered);
+    }
+  } catch (err) {
+    console.error('deleteBalanceHistoryForAccount local failed', err);
+  }
+
+  // Pending sync queue: drop matching entries so they don't resurrect
+  try {
+    const queue = await readPendingQueue();
+    const filtered = queue.filter((e) => !(e.userId === userId && e.accountKey === accountKey));
+    if (filtered.length !== queue.length) {
+      await writePendingQueue(filtered);
+    }
+  } catch (err) {
+    console.error('deleteBalanceHistoryForAccount queue failed', err);
+  }
+
+  if (isBalanceHistoryConfigured()) {
+    try {
+      await deleteBalanceHistoryByAccountKey(userId, accountKey);
+    } catch (err) {
+      console.error('deleteBalanceHistoryForAccount remote failed', err);
     }
   }
 }

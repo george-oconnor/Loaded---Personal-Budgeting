@@ -279,6 +279,13 @@ export async function removeAccountBalance(options: {
       } catch (err) {
         console.error('Error deleting remote account balance:', err);
       }
+
+      try {
+        const { deleteBalanceHistoryForAccount } = await import('./balanceHistory');
+        await deleteBalanceHistoryForAccount(userId, resolvedKey);
+      } catch (err) {
+        console.error('Error purging balance history for removed account:', err);
+      }
     }
 
     return filtered;

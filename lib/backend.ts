@@ -31,6 +31,7 @@ export const {
   upsertBalanceHistoryEntries,
   getBalanceHistory,
   deleteBalanceHistoryByBatch,
+  deleteBalanceHistoryByAccountKey,
   deleteAllBalanceHistory,
   deleteBalanceHistoryPage,
   countBalanceHistory,
