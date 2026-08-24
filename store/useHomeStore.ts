@@ -30,8 +30,13 @@ type HomeState = {
   cycleType: "first_working_day" | "last_working_day" | "specific_date" | "last_friday";
   cycleDay?: number;
   oldestCycleLoaded: number; // Track the oldest cycle offset we've loaded (e.g., -6)
+  // Bumped to tell AccountBalanceCard to reload, without forcing a refetch on
+  // every render/focus — only on app foreground, manual pull-to-refresh, and
+  // import completion.
+  balancesRefreshToken: number;
   fetchHome: () => Promise<void>;
   refreshHomeIfStale: () => Promise<void>; // cache-first: only fetch if stale/empty
+  refreshBalances: () => void;
   clearHome: () => void;
   fetchOlderTransactions: (cyclesBack: number) => Promise<void>; // Load more historical data
   setCategory: (id: string) => void;
@@ -107,6 +112,7 @@ export const useHomeStore = create<HomeState>()(
   cycleType: "first_working_day",
   cycleDay: undefined,
   oldestCycleLoaded: -6, // Initially load 6 cycles back
+  balancesRefreshToken: 0,
   fetchHome: async () => {
     // Cache-first: only block the UI on a genuine first load (no cached summary);
     // otherwise refresh in the background while the cached data stays on screen.
@@ -340,6 +346,7 @@ export const useHomeStore = create<HomeState>()(
     const stale = !s.summary || Date.now() - s.lastFetched > HOME_TTL_MS;
     if (stale) await get().fetchHome();
   },
+  refreshBalances: () => set((s) => ({ balancesRefreshToken: s.balancesRefreshToken + 1 })),
   clearHome: () =>
     set({ summary: null, transactions: [], categories: mockCategories, selectedCategory: "all", lastFetched: 0, cachedUserId: undefined }),
   fetchOlderTransactions: async (cyclesBack: number) => {

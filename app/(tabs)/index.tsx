@@ -30,13 +30,14 @@ export default function Index() {
     loading,
     fetchHome,
     refreshHomeIfStale,
+    refreshBalances,
+    balancesRefreshToken,
     cycleType,
     cycleDay,
   } = useHomeStore();
 
   const { user } = useSessionStore();
   const [refreshing, setRefreshing] = useState(false);
-  const [refreshTrigger, setRefreshTrigger] = useState(0);
   const appState = useRef(AppState.currentState);
 
   useEffect(() => {
@@ -56,20 +57,20 @@ export default function Index() {
         user?.id
       ) {
         refreshHomeIfStale();
-        setRefreshTrigger((prev) => prev + 1);
+        refreshBalances();
       }
       appState.current = nextAppState;
     });
 
     return () => subscription.remove();
-  }, [user?.id, refreshHomeIfStale]);
+  }, [user?.id, refreshHomeIfStale, refreshBalances]);
 
   const handleRefresh = async () => {
     setRefreshing(true);
     try {
       await fetchHome();
       // Trigger account balance card refresh
-      setRefreshTrigger(prev => prev + 1);
+      refreshBalances();
     } finally {
       setRefreshing(false);
     }
@@ -119,7 +120,7 @@ export default function Index() {
         {hasTransactions ? (
           <>
             <IncomeExpenseRow summary={summary} loading={loading} transactions={cycleTransactions} />
-            <AccountBalanceCard refreshTrigger={refreshTrigger} />
+            <AccountBalanceCard refreshTrigger={balancesRefreshToken} />
             <QuickActions actions={quickActions} />
             <TransactionsSection transactions={transactions} categories={categories} currency={summary?.currency ?? "EUR"} loading={loading} />
           </>

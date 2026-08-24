@@ -67,7 +67,7 @@ const latestDateISO = (txs: { date: string }[], fallback: string) => {
 
 export default function PdfPreviewScreen() {
   const { user } = useSessionStore();
-  const { fetchHome } = useHomeStore();
+  const { fetchHome, refreshBalances } = useHomeStore();
   const params = useLocalSearchParams();
 
   // Get account info from params (passed from select-account screen)
@@ -462,9 +462,10 @@ export default function PdfPreviewScreen() {
         [
           {
             text: "View Home",
-            onPress: () => {
+            onPress: async () => {
               clearParsedPdfTransactions();
-              fetchHome();
+              await fetchHome();
+              refreshBalances();
               router.replace("/");
             },
           },

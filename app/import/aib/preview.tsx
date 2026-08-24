@@ -67,7 +67,7 @@ const latestDateISO = (txs: { date: string }[], fallback: string) => {
 
 export default function ImportPreviewScreen() {
   const { user } = useSessionStore();
-  const { fetchHome } = useHomeStore();
+  const { fetchHome, refreshBalances } = useHomeStore();
   const params = useLocalSearchParams();
   const selectedAccountKey = params.selectedAccountKey as string;
   const selectedAccountName = params.selectedAccountName as string;
@@ -566,6 +566,7 @@ export default function ImportPreviewScreen() {
       console.log('Step 13: Fetching home data...');
       const step13Start = Date.now();
       await fetchHome();
+      refreshBalances();
       console.log(`Step 13 complete: Fetched home in ${Date.now() - step13Start}ms`);
       
       // Track last import date for notifications

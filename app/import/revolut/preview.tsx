@@ -67,7 +67,7 @@ const earliestDateISO = (txs: { date: string }[]) => {
 
 export default function ImportPreviewScreen() {
   const { user } = useSessionStore();
-  const { fetchHome } = useHomeStore();
+  const { fetchHome, refreshBalances } = useHomeStore();
   const [loading, setLoading] = useState(false);
   const [transactions, setTransactions] = useState<Transaction[]>([]);
   const [importProgress, setImportProgress] = useState({ current: 0, total: 0 });
@@ -436,9 +436,10 @@ export default function ImportPreviewScreen() {
         [
           {
             text: "View Home",
-            onPress: () => {
+            onPress: async () => {
               clearParsedTransactions();
-              fetchHome();
+              await fetchHome();
+              refreshBalances();
               router.replace("/");
             },
           },

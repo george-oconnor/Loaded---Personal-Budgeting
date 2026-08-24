@@ -67,7 +67,7 @@ const latestDateISO = (txs: { date: string }[], fallback: string) => {
 
 export default function GenericCSVPreviewScreen() {
   const { user } = useSessionStore();
-  const { fetchHome } = useHomeStore();
+  const { fetchHome, refreshBalances } = useHomeStore();
   const params = useLocalSearchParams();
   
   // Get account info from params (passed from select-account screen)
@@ -429,9 +429,10 @@ export default function GenericCSVPreviewScreen() {
         [
           {
             text: "View Home",
-            onPress: () => {
+            onPress: async () => {
               clearParsedTransactions();
-              fetchHome();
+              await fetchHome();
+              refreshBalances();
               router.replace("/");
             },
           },
